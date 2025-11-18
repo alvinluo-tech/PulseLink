@@ -1,0 +1,40 @@
+<resources>
+    <string name="app_name">PulseLink</string>
+    
+    <!-- Welcome Screen -->
+    <string name="welcome_title">Welcome</string>
+    <string name="welcome_subtitle">Health Assistant</string>
+    <string name="welcome_role_prompt">I am a…</string>
+    <string name="role_senior_title">Senior</string>
+    <string name="role_senior_subtitle">I need health\nassistance</string>
+    <string name="role_caregiver_title">Caregiver</string>
+    <string name="role_caregiver_subtitle">I care for my loved\nones</string>
+    <string name="welcome_choose_hint">Choose your role to continue</string>
+    
+    <!-- Login Screen -->
+    <string name="senior_login_title">Senior Login</string>
+    <string name="caregiver_login_title">Caregiver Login</string>
+    <string name="login_welcome_back">Welcome back!</string>
+    <string name="login_username_label">Username</string>
+    <string name="login_username_hint">Enter your username</string>
+    <string name="login_password_label">Password</string>
+    <string name="login_password_hint">Enter your password</string>
+    <string name="login_terms_agreement">I agree to the Privacy Policy and Terms of Service</string>
+    <string name="login_button">Login</string>
+    <string name="login_no_account">Don\'t have an account?</string>
+    <string name="login_register_link">Register</string>
+    
+    <!-- Home Screen -->
+    <string name="greeting_hello">Hello, Mrs. Zhang</string>
+    <string name="greeting_subtitle">It\'s a beautiful day!</string>
+    <string name="health_data_title">Health\nData</string>
+    <string name="health_data_value">BP 120/80</string>
+    <string name="reminders_title">Reminders</string>
+    <string name="reminders_count">3 Today</string>
+    <string name="bp_history_title">BP History</string>
+    <string name="bp_history_subtitle">View Records</string>
+    <string name="smart_device_title">Smart\nDevice</string>
+    <string name="smart_device_subtitle">Manage</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_profile">Profile</string>
+</resources>
