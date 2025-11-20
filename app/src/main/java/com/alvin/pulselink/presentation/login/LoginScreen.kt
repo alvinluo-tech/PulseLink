@@ -1,6 +1,7 @@
 package com.alvin.pulselink.presentation.login
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -8,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,7 +38,9 @@ import com.alvin.pulselink.ui.theme.*
 fun SeniorLoginScreen(
     viewModel: LoginViewModel,
     onNavigateToHome: () -> Unit,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToRegister: () -> Unit = {},
+    onNavigateToForgotPassword: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -63,6 +67,9 @@ fun SeniorLoginScreen(
         onTermsAgreementChange = viewModel::onTermsAgreementChange,
         onLoginClick = { viewModel.login(UserRole.SENIOR) },
         onBackClick = onNavigateBack,
+        onRegisterClick = onNavigateToRegister,
+        onForgotPasswordClick = onNavigateToForgotPassword,
+        onResendVerification = viewModel::resendVerificationEmail,
         title = stringResource(R.string.senior_login_title),
         backgroundColor = Brush.verticalGradient(
             colors = listOf(
@@ -81,7 +88,9 @@ fun SeniorLoginScreen(
 fun CaregiverLoginScreen(
     viewModel: LoginViewModel,
     onNavigateToHome: () -> Unit,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToRegister: () -> Unit = {},
+    onNavigateToForgotPassword: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -108,6 +117,9 @@ fun CaregiverLoginScreen(
         onTermsAgreementChange = viewModel::onTermsAgreementChange,
         onLoginClick = { viewModel.login(UserRole.CAREGIVER) },
         onBackClick = onNavigateBack,
+        onRegisterClick = onNavigateToRegister,
+        onForgotPasswordClick = onNavigateToForgotPassword,
+        onResendVerification = viewModel::resendVerificationEmail,
         title = stringResource(R.string.caregiver_login_title),
         backgroundColor = Brush.verticalGradient(
             colors = listOf(
@@ -135,6 +147,9 @@ private fun LoginScreenContent(
     onTermsAgreementChange: (Boolean) -> Unit,
     onLoginClick: () -> Unit,
     onBackClick: () -> Unit,
+    onRegisterClick: () -> Unit = {},
+    onForgotPasswordClick: () -> Unit = {},
+    onResendVerification: () -> Unit = {},
     title: String,
     backgroundColor: Brush,
     iconBackground: Any, // Can be Color or Brush
@@ -233,6 +248,7 @@ private fun LoginScreenContent(
                             color = Color(0xFF9CA3AF)
                         )
                     },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(60.dp),
@@ -284,7 +300,24 @@ private fun LoginScreenContent(
                 )
             }
             
-            Spacer(modifier = Modifier.height(24.dp))
+            // Forgot Password Link
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(
+                    onClick = onForgotPasswordClick
+                ) {
+                    Text(
+                        text = "Forgot Password?",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = buttonColor
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
             
             // Terms Checkbox
             Row(
@@ -338,6 +371,36 @@ private fun LoginScreenContent(
             
             Spacer(modifier = Modifier.height(24.dp))
             
+            // Resend Verification Email Button (only show if needed)
+            if (uiState.showResendVerification) {
+                OutlinedButton(
+                    onClick = onResendVerification,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = buttonColor
+                    ),
+                    border = BorderStroke(2.dp, buttonColor),
+                    enabled = !uiState.isLoading
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Email,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Resend Verification Email",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            
             // Register Link
             Row(
                 horizontalArrangement = Arrangement.Center,
@@ -350,7 +413,7 @@ private fun LoginScreenContent(
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 TextButton(
-                    onClick = { /* TODO: Register */ }
+                    onClick = onRegisterClick
                 ) {
                     Text(
                         text = stringResource(R.string.login_register_link),

@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 用户文档 - 只能在登录后创建和访问
+    match /users/{userId} {
+      // 允许已登录用户读写自己的数据
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // 测试日志 - 允许所有读写（仅用于开发测试）
+    match /test_logs/{document=**} {
+      allow read, write: if true;
+    }
+    
+    // 健康数据
+    match /health_data/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // 提醒数据
+    match /reminders/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

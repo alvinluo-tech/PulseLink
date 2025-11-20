@@ -15,9 +15,17 @@ import com.alvin.pulselink.presentation.login.CaregiverLoginScreen
 import com.alvin.pulselink.presentation.login.LoginViewModel
 import com.alvin.pulselink.presentation.login.SeniorLoginScreen
 import com.alvin.pulselink.presentation.profile.ProfileScreen
+import com.alvin.pulselink.presentation.register.SeniorRegisterScreen
+import com.alvin.pulselink.presentation.register.CaregiverRegisterScreen
+import com.alvin.pulselink.presentation.forgotpassword.SeniorForgotPasswordScreen
+import com.alvin.pulselink.presentation.forgotpassword.CaregiverForgotPasswordScreen
 import com.alvin.pulselink.presentation.reminder.ReminderScreen
 import com.alvin.pulselink.presentation.reminderlist.ReminderListScreen
+import com.alvin.pulselink.presentation.verification.SeniorEmailVerificationScreen
+import com.alvin.pulselink.presentation.verification.CaregiverEmailVerificationScreen
 import com.alvin.pulselink.presentation.welcome.WelcomeScreen
+import androidx.navigation.navArgument
+import androidx.navigation.NavType
 
 @Composable
 fun NavGraph(
@@ -53,7 +61,15 @@ fun NavGraph(
                     }
                 },
                 onNavigateBack = {
-                    navController.popBackStack()
+                    navController.navigate(Screen.Welcome.route) {
+                        popUpTo(Screen.SeniorLogin.route) { inclusive = true }
+                    }
+                },
+                onNavigateToRegister = {
+                    navController.navigate(Screen.SeniorRegister.route)
+                },
+                onNavigateToForgotPassword = {
+                    navController.navigate(Screen.SeniorForgotPassword.route)
                 }
             )
         }
@@ -68,6 +84,112 @@ fun NavGraph(
                         popUpTo(Screen.Welcome.route) { inclusive = true }
                     }
                 },
+                onNavigateBack = {
+                    navController.navigate(Screen.Welcome.route) {
+                        popUpTo(Screen.CaregiverLogin.route) { inclusive = true }
+                    }
+                },
+                onNavigateToRegister = {
+                    navController.navigate(Screen.CaregiverRegister.route)
+                },
+                onNavigateToForgotPassword = {
+                    navController.navigate(Screen.CaregiverForgotPassword.route)
+                }
+            )
+        }
+        
+        // Senior Register Screen
+        composable(route = Screen.SeniorRegister.route) {
+            SeniorRegisterScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToLogin = {
+                    navController.navigate(Screen.SeniorLogin.route) {
+                        popUpTo(Screen.SeniorRegister.route) { inclusive = true }
+                    }
+                },
+                onRegisterSuccess = { email ->
+                    navController.navigate(Screen.SeniorEmailVerification.createRoute(email)) {
+                        popUpTo(Screen.SeniorRegister.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+        
+        // Caregiver Register Screen
+        composable(route = Screen.CaregiverRegister.route) {
+            CaregiverRegisterScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToLogin = {
+                    navController.navigate(Screen.CaregiverLogin.route) {
+                        popUpTo(Screen.CaregiverRegister.route) { inclusive = true }
+                    }
+                },
+                onRegisterSuccess = { email ->
+                    navController.navigate(Screen.CaregiverEmailVerification.createRoute(email)) {
+                        popUpTo(Screen.CaregiverRegister.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+        
+        // Senior Email Verification Screen
+        composable(
+            route = Screen.SeniorEmailVerification.route,
+            arguments = listOf(navArgument("email") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val email = backStackEntry.arguments?.getString("email") ?: ""
+            SeniorEmailVerificationScreen(
+                email = email,
+                onNavigateBack = {
+                    navController.navigate(Screen.SeniorLogin.route) {
+                        popUpTo(Screen.Welcome.route) { inclusive = false }
+                    }
+                },
+                onGotEmail = {
+                    navController.navigate(Screen.SeniorLogin.route) {
+                        popUpTo(Screen.Welcome.route) { inclusive = false }
+                    }
+                }
+            )
+        }
+        
+        // Caregiver Email Verification Screen
+        composable(
+            route = Screen.CaregiverEmailVerification.route,
+            arguments = listOf(navArgument("email") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val email = backStackEntry.arguments?.getString("email") ?: ""
+            CaregiverEmailVerificationScreen(
+                email = email,
+                onNavigateBack = {
+                    navController.navigate(Screen.CaregiverLogin.route) {
+                        popUpTo(Screen.Welcome.route) { inclusive = false }
+                    }
+                },
+                onGotEmail = {
+                    navController.navigate(Screen.CaregiverLogin.route) {
+                        popUpTo(Screen.Welcome.route) { inclusive = false }
+                    }
+                }
+            )
+        }
+        
+        // Senior Forgot Password Screen
+        composable(route = Screen.SeniorForgotPassword.route) {
+            SeniorForgotPasswordScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+        
+        // Caregiver Forgot Password Screen
+        composable(route = Screen.CaregiverForgotPassword.route) {
+            CaregiverForgotPasswordScreen(
                 onNavigateBack = {
                     navController.popBackStack()
                 }

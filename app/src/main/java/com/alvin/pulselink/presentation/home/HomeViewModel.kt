@@ -2,6 +2,7 @@ package com.alvin.pulselink.presentation.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.usecase.GetHealthDataUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,14 +14,25 @@ import javax.inject.Inject
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val getHealthDataUseCase: GetHealthDataUseCase
+    private val getHealthDataUseCase: GetHealthDataUseCase,
+    private val authRepository: AuthRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
     
     init {
+        loadUserInfo()
         loadHealthData()
+    }
+    
+    private fun loadUserInfo() {
+        viewModelScope.launch {
+            val user = authRepository.getCurrentUser()
+            _uiState.update { 
+                it.copy(username = user?.username ?: "User")
+            }
+        }
     }
     
     private fun loadHealthData() {
@@ -47,6 +59,7 @@ class HomeViewModel @Inject constructor(
     }
     
     fun refresh() {
+        loadUserInfo()
         loadHealthData()
     }
 }

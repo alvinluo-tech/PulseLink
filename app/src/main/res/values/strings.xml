@@ -15,8 +15,8 @@
     <string name="senior_login_title">Senior Login</string>
     <string name="caregiver_login_title">Caregiver Login</string>
     <string name="login_welcome_back">Welcome back!</string>
-    <string name="login_username_label">Username</string>
-    <string name="login_username_hint">Enter your username</string>
+    <string name="login_username_label">Email</string>
+    <string name="login_username_hint">Enter your email address</string>
     <string name="login_password_label">Password</string>
     <string name="login_password_hint">Enter your password</string>
     <string name="login_terms_agreement">I agree to the Privacy Policy and Terms of Service</string>
@@ -37,4 +37,32 @@
     <string name="smart_device_subtitle">Manage</string>
     <string name="nav_home">Home</string>
     <string name="nav_profile">Profile</string>
+    
+    <!-- Caregiver Dashboard -->
+    <string name="care_dashboard_title">Care Dashboard</string>
+    <string name="care_dashboard_managing">Managing %d loved ones</string>
+    <string name="care_status_good">Good</string>
+    <string name="care_status_attention">Attention</string>
+    <string name="care_status_urgent">Urgent</string>
+    <string name="care_loved_ones_title">Your Loved Ones</string>
+    <string name="care_view_details_hint">Tap on any person to view detailed health\nreports and alerts</string>
+    
+    <!-- Care Chat -->
+    <string name="care_chat_title">Care Chat</string>
+    <string name="care_chat_subtitle">Select who to consult about</string>
+    <string name="care_chat_instruction">Choose a loved one to get their latest\nhealth updates</string>
+    
+    <!-- Caregiver Profile -->
+    <string name="caregiver_account">Caregiver Account</string>
+    <string name="managing_members">Managing %d members</string>
+    <string name="care_overview">Care Overview</string>
+    <string name="good_status">Good Status</string>
+    <string name="need_attention">Need Attention</string>
+    <string name="urgent">Urgent</string>
+    <string name="active_alerts">Active Alerts</string>
+    <string name="settings">Settings</string>
+    <string name="manage_family_members">Manage Family Members</string>
+    <string name="privacy_security">Privacy &amp; Security</string>
+    <string name="help_center">Help Center</string>
+    <string name="log_out">Log Out</string>
 </resources>

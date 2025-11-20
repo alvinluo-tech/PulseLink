@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.Composable
 import androidx.navigation.compose.rememberNavController
 import com.alvin.pulselink.presentation.navigation.NavGraph
 import com.alvin.pulselink.ui.theme.PulseLinkTheme
@@ -45,11 +46,21 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             PulseLinkTheme {
-                val navController = rememberNavController()
-                NavGraph(navController = navController)
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    MainApp()
+                }
             }
         }
     }
+}
+
+@Composable
+fun MainApp() {
+    val navController = rememberNavController()
+    NavGraph(navController = navController)
 }
 
 @Composable

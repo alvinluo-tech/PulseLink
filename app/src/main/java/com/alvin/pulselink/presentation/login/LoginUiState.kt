@@ -6,5 +6,6 @@ data class LoginUiState(
     val agreedToTerms: Boolean = false,
     val isLoading: Boolean = false,
     val error: String? = null,
-    val isSuccess: Boolean = false
+    val isSuccess: Boolean = false,
+    val showResendVerification: Boolean = false  // 是否显示重新发送验证邮件按钮
 )

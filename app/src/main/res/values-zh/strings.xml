@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">脉搏链接</string>
+    
+    <!-- Welcome Screen -->
+    <string name="welcome_title">欢迎</string>
+    <string name="welcome_subtitle">健康助手</string>
+    <string name="welcome_role_prompt">我是…</string>
+    <string name="role_senior_title">长辈</string>
+    <string name="role_senior_subtitle">我需要健康\n协助</string>
+    <string name="role_caregiver_title">看护者</string>
+    <string name="role_caregiver_subtitle">我照顾我的\n亲人</string>
+    <string name="welcome_choose_hint">选择您的角色以继续</string>
+    
+    <!-- Login Screen -->
+    <string name="senior_login_title">长辈登录</string>
+    <string name="caregiver_login_title">看护者登录</string>
+    <string name="login_welcome_back">欢迎回来！</string>
+    <string name="login_username_label">邮箱</string>
+    <string name="login_username_hint">请输入您的邮箱地址</string>
+    <string name="login_password_label">密码</string>
+    <string name="login_password_hint">请输入您的密码</string>
+    <string name="login_terms_agreement">我同意隐私政策和服务条款</string>
+    <string name="login_button">登录</string>
+    <string name="login_no_account">还没有账号？</string>
+    <string name="login_register_link">注册</string>
+    
+    <!-- Home Screen -->
+    <string name="greeting_hello">您好，张女士</string>
+    <string name="greeting_subtitle">今天天气真好！</string>
+    <string name="health_data_title">健康\n数据</string>
+    <string name="health_data_value">血压 120/80</string>
+    <string name="reminders_title">提醒</string>
+    <string name="reminders_count">今天3项</string>
+    <string name="health_history_title">健康\n记录</string>
+    <string name="health_history_subtitle">查看记录</string>
+    <string name="smart_device_title">智能\n设备</string>
+    <string name="smart_device_subtitle">管理</string>
+    <string name="nav_home">首页</string>
+    <string name="nav_profile">个人</string>
+    
+    <!-- Caregiver Dashboard -->
+    <string name="care_dashboard_title">护理仪表板</string>
+    <string name="care_dashboard_managing">管理 %d 位亲人</string>
+    <string name="care_status_good">良好</string>
+    <string name="care_status_attention">注意</string>
+    <string name="care_status_urgent">紧急</string>
+    <string name="care_loved_ones_title">您的亲人</string>
+    <string name="care_view_details_hint">点击任何人以查看详细的健康\n报告和警报</string>
+    
+    <!-- Care Chat -->
+    <string name="care_chat_title">护理聊天</string>
+    <string name="care_chat_subtitle">选择要咨询的对象</string>
+    <string name="care_chat_instruction">选择一位亲人以获取他们的最新\n健康更新</string>
+    
+    <!-- Caregiver Profile -->
+    <string name="caregiver_account">看护者账户</string>
+    <string name="managing_members">管理 %d 位成员</string>
+    <string name="care_overview">护理概览</string>
+    <string name="good_status">状态良好</string>
+    <string name="need_attention">需要注意</string>
+    <string name="urgent">紧急</string>
+    <string name="active_alerts">活动警报</string>
+    <string name="settings">设置</string>
+    <string name="manage_family_members">管理家庭成员</string>
+    <string name="privacy_security">隐私与安全</string>
+    <string name="help_center">帮助中心</string>
+    <string name="log_out">退出登录</string>
+</resources>

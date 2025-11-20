@@ -2,11 +2,15 @@ package com.alvin.pulselink.data.repository
 
 import com.alvin.pulselink.domain.model.HealthData
 import com.alvin.pulselink.domain.repository.HealthRepository
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class HealthRepositoryImpl @Inject constructor() : HealthRepository {
+class HealthRepositoryImpl @Inject constructor(
+    private val firestore: FirebaseFirestore
+) : HealthRepository {
     
     // 模拟数据
     private val mockHealthData = HealthData(
@@ -40,6 +44,28 @@ class HealthRepositoryImpl @Inject constructor() : HealthRepository {
     override suspend fun saveHealthData(healthData: HealthData): Result<Unit> {
         return try {
             // 这里可以保存到数据库或远程服务器
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * 测试 Firestore 连接
+     * 向 test_logs 集合写入测试数据
+     */
+    override suspend fun testConnection(): Result<Unit> {
+        return try {
+            val testData = hashMapOf(
+                "timestamp" to System.currentTimeMillis(),
+                "status" to "connected",
+                "message" to "Firestore connection test successful"
+            )
+            
+            firestore.collection("test_logs")
+                .add(testData)
+                .await()
+            
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
