@@ -26,7 +26,12 @@ import com.alvin.pulselink.ui.theme.*
 
 @Composable
 fun HomeScreen(
-    viewModel: HomeViewModel = hiltViewModel()
+    viewModel: HomeViewModel = hiltViewModel(),
+    onNavigateToHealthData: () -> Unit = {},
+    onNavigateToHealthHistory: () -> Unit = {},
+    onNavigateToProfile: () -> Unit = {},
+    onNavigateToAssistant: () -> Unit = {},
+    onNavigateToReminder: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedItem by remember { mutableStateOf(0) }
@@ -36,7 +41,13 @@ fun HomeScreen(
         bottomBar = {
             BottomNavigationBar(
                 selectedItem = selectedItem,
-                onItemSelected = { selectedItem = it }
+                onItemSelected = { 
+                    selectedItem = it
+                    when (it) {
+                        1 -> onNavigateToAssistant()
+                        2 -> onNavigateToProfile()
+                    }
+                }
             )
         }
     ) { innerPadding ->
@@ -52,7 +63,12 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(32.dp))
             
             // Feature Cards Grid
-            FeatureCardsGrid(uiState = uiState)
+            FeatureCardsGrid(
+                uiState = uiState,
+                onHealthDataClick = onNavigateToHealthData,
+                onHealthHistoryClick = onNavigateToHealthHistory,
+                onReminderClick = onNavigateToReminder
+            )
         }
     }
 }
@@ -99,7 +115,12 @@ fun HeaderSection(username: String) {
 }
 
 @Composable
-fun FeatureCardsGrid(uiState: HomeUiState) {
+fun FeatureCardsGrid(
+    uiState: HomeUiState,
+    onHealthDataClick: () -> Unit = {},
+    onHealthHistoryClick: () -> Unit = {},
+    onReminderClick: () -> Unit = {}
+) {
     Column(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -114,14 +135,16 @@ fun FeatureCardsGrid(uiState: HomeUiState) {
                     ?: stringResource(R.string.health_data_value),
                 icon = Icons.Default.Favorite,
                 backgroundColor = HealthGreen,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                onClick = onHealthDataClick
             )
             FeatureCard(
                 title = stringResource(R.string.reminders_title),
                 subtitle = "${uiState.remindersCount} Today",
                 icon = Icons.Default.Notifications,
                 backgroundColor = ReminderOrange,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                onClick = onReminderClick
             )
         }
         
@@ -131,11 +154,12 @@ fun FeatureCardsGrid(uiState: HomeUiState) {
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             FeatureCard(
-                title = stringResource(R.string.bp_history_title),
-                subtitle = stringResource(R.string.bp_history_subtitle),
+                title = stringResource(R.string.health_history_title),
+                subtitle = stringResource(R.string.health_history_subtitle),
                 icon = Icons.Outlined.Timeline,
                 backgroundColor = SmartHomeBlue,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                onClick = onHealthHistoryClick
             )
             FeatureCard(
                 title = stringResource(R.string.smart_device_title),
@@ -148,18 +172,21 @@ fun FeatureCardsGrid(uiState: HomeUiState) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeatureCard(
     title: String,
     subtitle: String,
     icon: ImageVector,
     backgroundColor: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit = {}
 ) {
     Card(
         modifier = modifier.height(180.dp),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor)
+        colors = CardDefaults.cardColors(containerColor = backgroundColor),
+        onClick = onClick
     ) {
         Column(
             modifier = Modifier

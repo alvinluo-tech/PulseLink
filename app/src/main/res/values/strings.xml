@@ -31,8 +31,8 @@
     <string name="health_data_value">BP 120/80</string>
     <string name="reminders_title">Reminders</string>
     <string name="reminders_count">3 Today</string>
-    <string name="bp_history_title">BP History</string>
-    <string name="bp_history_subtitle">View Records</string>
+    <string name="health_history_title">Health\nHistory</string>
+    <string name="health_history_subtitle">View Records</string>
     <string name="smart_device_title">Smart\nDevice</string>
     <string name="smart_device_subtitle">Manage</string>
     <string name="nav_home">Home</string>

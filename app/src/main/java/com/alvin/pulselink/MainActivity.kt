@@ -9,6 +9,35 @@ import com.alvin.pulselink.presentation.navigation.NavGraph
 import com.alvin.pulselink.ui.theme.PulseLinkTheme
 import dagger.hilt.android.AndroidEntryPoint
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberBottomSheetScaffoldState
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import com.alvin.pulselink.ui.theme.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -126,8 +155,8 @@ fun FeatureCardsGrid() {
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             FeatureCard(
-                title = stringResource(R.string.bp_history_title),
-                subtitle = stringResource(R.string.bp_history_subtitle),
+                title = stringResource(R.string.health_history_title),
+                subtitle = stringResource(R.string.health_history_subtitle),
                 icon = Icons.Outlined.ShowChart,
                 backgroundColor = SmartHomeBlue,
                 modifier = Modifier.weight(1f)

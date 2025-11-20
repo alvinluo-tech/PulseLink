@@ -7,10 +7,16 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.alvin.pulselink.domain.model.UserRole
+import com.alvin.pulselink.presentation.health.HealthDataScreen
+import com.alvin.pulselink.presentation.history.HealthHistoryScreen
 import com.alvin.pulselink.presentation.home.HomeScreen
+import com.alvin.pulselink.presentation.assistant.VoiceAssistantScreen
 import com.alvin.pulselink.presentation.login.CaregiverLoginScreen
 import com.alvin.pulselink.presentation.login.LoginViewModel
 import com.alvin.pulselink.presentation.login.SeniorLoginScreen
+import com.alvin.pulselink.presentation.profile.ProfileScreen
+import com.alvin.pulselink.presentation.reminder.ReminderScreen
+import com.alvin.pulselink.presentation.reminderlist.ReminderListScreen
 import com.alvin.pulselink.presentation.welcome.WelcomeScreen
 
 @Composable
@@ -70,7 +76,103 @@ fun NavGraph(
         
         // Home Screen
         composable(route = Screen.Home.route) {
-            HomeScreen()
+            HomeScreen(
+                onNavigateToHealthData = {
+                    navController.navigate(Screen.HealthData.route)
+                },
+                onNavigateToHealthHistory = {
+                    navController.navigate(Screen.HealthHistory.route)
+                },
+                onNavigateToProfile = {
+                    navController.navigate(Screen.Profile.route)
+                },
+                onNavigateToAssistant = {
+                    navController.navigate(Screen.Assistant.route)
+                },
+                onNavigateToReminder = {
+                    navController.navigate(Screen.Reminder.route)
+                }
+            )
+        }
+        
+        // Health Data Screen
+        composable(route = Screen.HealthData.route) {
+            HealthDataScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToHome = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Home.route) { inclusive = true }
+                    }
+                },
+                onNavigateToProfile = {
+                    navController.navigate(Screen.Profile.route)
+                },
+                onNavigateToAssistant = {
+                    navController.navigate(Screen.Assistant.route)
+                }
+            )
+        }
+        
+        // Profile Screen
+        composable(route = Screen.Profile.route) {
+            ProfileScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToHome = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Home.route) { inclusive = true }
+                    }
+                },
+                onNavigateToAssistant = {
+                    navController.navigate(Screen.Assistant.route)
+                },
+                onNavigateToReminderList = {
+                    navController.navigate(Screen.ReminderList.route)
+                },
+                onLogout = {
+                    navController.navigate(Screen.Welcome.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // Voice Assistant Screen
+        composable(route = Screen.Assistant.route) {
+            VoiceAssistantScreen(
+                onClose = { navController.popBackStack() },
+                onNavigateHome = { navController.navigate(Screen.Home.route) },
+                onNavigateProfile = { navController.navigate(Screen.Profile.route) }
+            )
+        }
+        
+        // Health History Screen
+        composable(route = Screen.HealthHistory.route) {
+            HealthHistoryScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateHome = { navController.navigate(Screen.Home.route) },
+                onNavigateProfile = { navController.navigate(Screen.Profile.route) },
+                onNavigateAssistant = { navController.navigate(Screen.Assistant.route) }
+            )
+        }
+        
+        // Reminder Screen
+        composable(route = Screen.Reminder.route) {
+            ReminderScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        
+        // Reminder List Screen
+        composable(route = Screen.ReminderList.route) {
+            ReminderListScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToHome = { navController.navigate(Screen.Home.route) },
+                onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+            )
         }
     }
 }

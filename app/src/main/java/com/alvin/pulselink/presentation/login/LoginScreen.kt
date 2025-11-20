@@ -170,17 +170,17 @@ private fun LoginScreenContent(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // User Icon
+            val backgroundModifier = when (iconBackground) {
+                is Brush -> Modifier.background(iconBackground)
+                is Color -> Modifier.background(iconBackground)
+                else -> Modifier.background(Color.Blue)
+            }
+            
             Box(
                 modifier = Modifier
                     .size(100.dp)
                     .clip(CircleShape)
-                    .background(
-                        when (iconBackground) {
-                            is Brush -> iconBackground
-                            is Color -> iconBackground
-                            else -> Color.Blue
-                        }
-                    ),
+                    .then(backgroundModifier),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
