@@ -6,6 +6,7 @@ import com.alvin.pulselink.domain.repository.AuthRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,33 +21,40 @@ class AuthRepositoryImpl @Inject constructor(
      */
     override suspend fun login(email: String, password: String): Result<Unit> {
         return try {
-            val authResult = firebaseAuth.signInWithEmailAndPassword(email, password).await()
+            // 登录阶段设置总体超时，避免网络问题导致长时间卡住
+            val authResult = withTimeout(15_000) {
+                firebaseAuth.signInWithEmailAndPassword(email, password).await()
+            }
             val user = authResult.user ?: throw Exception("Login failed")
             
-            // 检查 Firestore 中是否已有用户文档，如果没有则创建
-            val userDoc = firestore.collection("users").document(user.uid).get().await()
-            
-            if (!userDoc.exists()) {
-                // 从 User Profile 中解析用户名和角色
-                val displayName = user.displayName ?: "User|SENIOR"
-                val parts = displayName.split("|")
-                val username = parts.getOrNull(0) ?: "User"
-                val role = parts.getOrNull(1) ?: "SENIOR"
-                
-                // 创建用户文档
-                val newUserDoc = hashMapOf(
-                    "uid" to user.uid,
-                    "email" to user.email,
-                    "username" to username,
-                    "role" to role,
-                    "createdAt" to System.currentTimeMillis(),
-                    "emailVerified" to user.isEmailVerified
-                )
-                
-                firestore.collection("users")
-                    .document(user.uid)
-                    .set(newUserDoc)
-                    .await()
+            // 尽量确保 Firestore 中有用户文档，但失败不影响登录成功
+            runCatching {
+                val userDoc = withTimeout(8_000) {
+                    firestore.collection("users").document(user.uid).get().await()
+                }
+                if (!userDoc.exists()) {
+                    // 从 User Profile 中解析用户名和角色
+                    val displayName = user.displayName ?: "User|SENIOR"
+                    val parts = displayName.split("|")
+                    val username = parts.getOrNull(0) ?: "User"
+                    val role = parts.getOrNull(1) ?: "SENIOR"
+                    
+                    // 创建用户文档
+                    val newUserDoc = hashMapOf(
+                        "uid" to user.uid,
+                        "email" to user.email,
+                        "username" to username,
+                        "role" to role,
+                        "createdAt" to System.currentTimeMillis(),
+                        "emailVerified" to user.isEmailVerified
+                    )
+                    withTimeout(8_000) {
+                        firestore.collection("users")
+                            .document(user.uid)
+                            .set(newUserDoc)
+                            .await()
+                    }
+                }
             }
             
             Result.success(Unit)
@@ -65,19 +73,43 @@ class AuthRepositoryImpl @Inject constructor(
         role: UserRole
     ): Result<Unit> {
         return try {
-            // 1. 创建 Firebase 账号
-            val authResult = firebaseAuth.createUserWithEmailAndPassword(email, password).await()
+            // 1. 创建 Firebase 账号（超时保护）
+            val authResult = withTimeout(15_000) {
+                firebaseAuth.createUserWithEmailAndPassword(email, password).await()
+            }
             val user = authResult.user ?: throw Exception("User creation failed")
             
-            // 2. 立即发送验证邮件
-            user.sendEmailVerification().await()
+            // 2. 立即发送验证邮件（超时保护）
+            runCatching {
+                withTimeout(8_000) { user.sendEmailVerification().await() }
+            }
             
             // 3. 临时保存用户信息到本地（等验证后再同步到 Firestore）
             // 将 username 和 role 保存到 Firebase User Profile
-            val profileUpdates = com.google.firebase.auth.UserProfileChangeRequest.Builder()
-                .setDisplayName("$username|$role")  // 格式: "用户名|角色"
-                .build()
-            user.updateProfile(profileUpdates).await()
+            runCatching {
+                val profileUpdates = com.google.firebase.auth.UserProfileChangeRequest.Builder()
+                    .setDisplayName("$username|$role")  // 格式: "用户名|角色"
+                    .build()
+                withTimeout(8_000) { user.updateProfile(profileUpdates).await() }
+            }
+            
+            // 4. 提前写入 users 文档，减少首次登录的额外网络交互成本（失败仅记录，不影响注册成功）
+            runCatching {
+                val newUserDoc = hashMapOf(
+                    "uid" to user.uid,
+                    "email" to email,
+                    "username" to username,
+                    "role" to role.name,
+                    "createdAt" to System.currentTimeMillis(),
+                    "emailVerified" to false
+                )
+                withTimeout(8_000) {
+                    firestore.collection("users")
+                        .document(user.uid)
+                        .set(newUserDoc)
+                        .await()
+                }
+            }
             
             Result.success(Unit)
         } catch (e: Exception) {
@@ -177,5 +209,45 @@ class AuthRepositoryImpl @Inject constructor(
      */
     override suspend fun isLoggedIn(): Boolean {
         return firebaseAuth.currentUser != null
+    }
+    
+    /**
+     * 修改密码
+     */
+    override suspend fun changePassword(newPassword: String): Result<Unit> {
+        return try {
+            val user = firebaseAuth.currentUser 
+                ?: throw Exception("No user logged in")
+            
+            user.updatePassword(newPassword).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * 删除账户
+     */
+    override suspend fun deleteAccount(): Result<Unit> {
+        return try {
+            val user = firebaseAuth.currentUser 
+                ?: throw Exception("No user logged in")
+            
+            val uid = user.uid
+            
+            // 1. 删除 Firestore 中的用户数据
+            firestore.collection("users")
+                .document(uid)
+                .delete()
+                .await()
+            
+            // 2. 删除 Firebase Authentication 账户
+            user.delete().await()
+            
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }

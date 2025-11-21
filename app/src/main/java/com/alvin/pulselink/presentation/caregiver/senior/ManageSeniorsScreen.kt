@@ -43,8 +43,9 @@ fun ManageSeniorsScreen(
                 title = {
                     Text(
                         text = "My Senior Accounts",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF111827)
                     )
                 },
                 navigationIcon = {
@@ -57,7 +58,9 @@ fun ManageSeniorsScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.White
+                    containerColor = Color.White,
+                    titleContentColor = Color(0xFF111827),
+                    navigationIconContentColor = Color(0xFF8B5CF6)
                 )
             )
         },
@@ -79,6 +82,22 @@ fun ManageSeniorsScreen(
                     // 显示所有创建与链接的老人（合并列表）
                     val list = remember(manageSeniorsState.createdSeniors, manageSeniorsState.linkedSeniors) {
                         manageSeniorsState.createdSeniors + manageSeniorsState.linkedSeniors
+                    }
+
+                    // 统计信息
+                    val createdCount = manageSeniorsState.createdSeniors.size
+                    val linkedCount = manageSeniorsState.linkedSeniors.size
+                    val totalCount = createdCount + linkedCount
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        StatCard(label = "Total", value = totalCount)
+                        StatCard(label = "Created", value = createdCount)
+                        StatCard(label = "Linked", value = linkedCount)
                     }
 
                     if (list.isEmpty()) {
@@ -158,7 +177,8 @@ private fun SeniorCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp, pressedElevation = 6.dp),
+        onClick = {}
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
 
@@ -294,6 +314,21 @@ private fun SeniorCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StatCard(label: String, value: Int) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFFF9FAFB),
+        border = BorderStroke(1.dp, Color(0xFFE5E7EB))
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(text = label, fontSize = 12.sp, color = Color(0xFF6B7280))
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = value.toString(), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF111827))
         }
     }
 }

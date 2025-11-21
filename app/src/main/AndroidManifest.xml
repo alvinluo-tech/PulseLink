@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Allow network access for Firebase / Recaptcha / API calls -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:name=".PulseLinkApplication"
         android:allowBackup="true"

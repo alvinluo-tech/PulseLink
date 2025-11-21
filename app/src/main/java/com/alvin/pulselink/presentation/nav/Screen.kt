@@ -3,11 +3,15 @@ package com.alvin.pulselink.presentation.nav
 /**
  * 应用路由定义
  * 统一管理所有页面的导航路由
+ * 
+ * 采用 "公共模块共享 + 角色模块分流" 的策略：
+ * - 认证相关页面接收 role 参数，动态改变 UI
+ * - 业务功能页面按角色分流到 senior/ 和 caregiver/
  */
 sealed class Screen(val route: String) {
     
-    // ===== 认证相关 =====
-    /** 欢迎页 - 角色选择 */
+    // ===== 认证相关（公共） =====
+    /** 欢迎页 - 角色选择入口 */
     object Welcome : Screen("welcome")
     
     /** 登录页 - 接收 role 参数 (senior/caregiver) */
@@ -26,50 +30,41 @@ sealed class Screen(val route: String) {
     }
     
     /** 邮箱验证 */
-    object EmailVerification : Screen("email_verification/{email}/{role}") {
-        fun createRoute(email: String, role: String) = "email_verification/$email/$role"
+    object EmailVerification : Screen("email_verification/{email}") {
+        fun createRoute(email: String) = "email_verification/$email"
     }
     
-    // ===== 老人端页面 =====
+    // ===== 老人端专属功能流 =====
     /** 老人端主页 */
     object SeniorHome : Screen("senior/home")
     
     /** 健康数据 */
-    object SeniorHealthData : Screen("senior/health_data")
+    object HealthData : Screen("senior/health_data")
     
     /** 健康历史 */
-    object SeniorHealthHistory : Screen("senior/health_history")
+    object HealthHistory : Screen("senior/health_history")
     
-    /** 提醒列表 */
-    object SeniorReminderList : Screen("senior/reminder_list")
+    /** 提醒（临近提醒反馈） */
+    object Reminder : Screen("senior/reminder")
     
-    /** 添加/编辑提醒 */
-    object SeniorReminder : Screen("senior/reminder/{id?}") {
-        fun createRoute(id: String? = null) = if (id != null) "senior/reminder/$id" else "senior/reminder/new"
-    }
+    /** 提醒列表（今日所有提醒） */
+    object ReminderList : Screen("senior/reminder_list")
     
     /** 语音助手 */
-    object SeniorVoiceAssistant : Screen("senior/voice_assistant")
+    object VoiceAssistant : Screen("senior/voice_assistant")
     
     /** 老人个人资料 */
     object SeniorProfile : Screen("senior/profile")
     
-    // ===== 子女端页面 =====
-    /** 子女端仪表盘 */
-    object CareDashboard : Screen("caregiver/dashboard")
+    /** 老人端设置 */
+    object SeniorSettings : Screen("senior/settings")
     
-    /** 护理聊天选择 */
+    // ===== 子女端专属功能流 =====
+    /** 子女端主页（仪表盘） */
+    object CaregiverHome : Screen("caregiver/home")
+    
+    /** 护理聊天 */
     object CareChat : Screen("caregiver/chat")
-    
-    /** 聊天详情 */
-    object CareChatDetail : Screen("caregiver/chat/{lovedOneId}") {
-        fun createRoute(lovedOneId: String) = "caregiver/chat/$lovedOneId"
-    }
-    
-    /** 亲人详情 */
-    object LovedOneDetail : Screen("caregiver/loved_one/{lovedOneId}") {
-        fun createRoute(lovedOneId: String) = "caregiver/loved_one/$lovedOneId"
-    }
     
     /** 子女个人资料 */
     object CaregiverProfile : Screen("caregiver/profile")
@@ -77,17 +72,16 @@ sealed class Screen(val route: String) {
     /** 设置 */
     object CareSettings : Screen("caregiver/settings")
     
-    /** 管理家庭成员 */
-    object ManageFamily : Screen("caregiver/manage_family")
+    /** 创建老人账户（管理已创建的老人列表） */
+    object ManageSeniors : Screen("caregiver/manage_seniors")
     
-    /** 添加家庭成员 */
-    object AddFamilyMember : Screen("caregiver/add_family_member")
+    /** 创建新的老人账户表单 */
+    object CreateSenior : Screen("caregiver/create_senior") {
+        fun createRouteForEdit(seniorId: String): String = "$route?seniorId=$seniorId"
+    }
     
-    /** 隐私与安全 */
-    object PrivacySecurity : Screen("caregiver/privacy_security")
-    
-    /** 帮助中心 */
-    object HelpCenter : Screen("caregiver/help_center")
+    /** 绑定已存在的老人账户 */
+    object LinkSenior : Screen("caregiver/link_senior")
     
     // ===== 测试页面 (开发用) =====
     object FirebaseTest : Screen("test/firebase")

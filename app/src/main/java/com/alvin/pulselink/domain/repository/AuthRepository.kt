@@ -30,4 +30,10 @@ interface AuthRepository {
     
     // 检查登录状态
     suspend fun isLoggedIn(): Boolean
+    
+    // 修改密码
+    suspend fun changePassword(newPassword: String): Result<Unit>
+    
+    // 删除账户
+    suspend fun deleteAccount(): Result<Unit>
 }

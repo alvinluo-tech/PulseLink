@@ -3,6 +3,8 @@ package com.alvin.pulselink.presentation.auth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.domain.model.UserRole
+import com.alvin.pulselink.domain.repository.SeniorRepository
+import com.alvin.pulselink.data.local.LocalDataSource
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.usecase.LoginUseCase
 import com.alvin.pulselink.domain.usecase.RegisterUseCase
@@ -22,7 +24,9 @@ import javax.inject.Inject
 class AuthViewModel @Inject constructor(
     private val loginUseCase: LoginUseCase,
     private val registerUseCase: RegisterUseCase,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val seniorRepository: SeniorRepository,
+    private val localDataSource: LocalDataSource
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(AuthUiState())
@@ -37,9 +41,14 @@ class AuthViewModel @Inject constructor(
     fun onPasswordChange(password: String) {
         _uiState.update { it.copy(password = password, passwordError = null, error = null) }
     }
-    
+
     fun onTermsAgreementChange(agreed: Boolean) {
         _uiState.update { it.copy(agreedToTerms = agreed, error = null) }
+    }
+
+    // ===== 老人端专用字段 =====
+    fun onVirtualIdChange(id: String) {
+        _uiState.update { it.copy(virtualId = id.uppercase().trim(), virtualIdError = null, error = null) }
     }
     
     // ===== 注册专用字段 =====
@@ -97,28 +106,64 @@ class AuthViewModel @Inject constructor(
                 password = currentState.password
             )
             
-            _uiState.update {
-                if (result.isSuccess) {
-                    // 检查邮箱验证状态
-                    val isVerified = authRepository.isEmailVerified()
-                    if (!isVerified) {
-                        // 邮箱未验证，立即登出用户
-                        authRepository.logout()
+            if (result.isSuccess) {
+                // 检查邮箱验证状态（未验证则阻止登录并提示重发）
+                val isVerified = authRepository.isEmailVerified()
+                if (!isVerified) {
+                    authRepository.logout()
+                    _uiState.update {
                         it.copy(
                             isLoading = false,
                             isSuccess = false,
                             showResendVerification = true,
                             error = "Email not verified. Please check your inbox and click the verification link before logging in."
                         )
-                    } else {
+                    }
+                    return@launch
+                }
+
+                // 读取用户信息，校验角色是否与当前登录端一致
+                val user = authRepository.getCurrentUser()
+                if (user == null) {
+                    authRepository.logout()
+                    _uiState.update {
                         it.copy(
-                            isLoading = false, 
-                            isSuccess = true, 
-                            error = null,
-                            showResendVerification = false
+                            isLoading = false,
+                            isSuccess = false,
+                            showResendVerification = false,
+                            error = "Failed to retrieve user info. Please try again."
                         )
                     }
-                } else {
+                    return@launch
+                }
+
+                if (user.role != role) {
+                    // 账号角色与选择的端不一致，阻止跨端登录
+                    authRepository.logout()
+                    val expected = if (role.name == "SENIOR") "senior" else "caregiver"
+                    val actual = if (user.role.name == "SENIOR") "senior" else "caregiver"
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isSuccess = false,
+                            showResendVerification = false,
+                            error = "Role mismatch: this account is for $actual. Please login on the $expected side."
+                        )
+                    }
+                    return@launch
+                }
+
+                // 成功且角色匹配
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        isSuccess = true,
+                        error = null,
+                        showResendVerification = false
+                    )
+                }
+            } else {
+                _uiState.update {
                     it.copy(
                         isLoading = false,
                         isSuccess = false,
@@ -127,6 +172,56 @@ class AuthViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * 老人端登录：通过虚拟ID验证，无需邮箱与密码
+     */
+    fun loginSeniorById() {
+        viewModelScope.launch {
+            val id = _uiState.value.virtualId
+
+            // 输入校验
+            if (id.isBlank()) {
+                _uiState.update { it.copy(virtualIdError = "请输入虚拟ID") }
+                return@launch
+            }
+            if (!id.matches(Regex("^SNR-[A-Z0-9]{8}$"))) {
+                _uiState.update { it.copy(virtualIdError = "ID格式不正确，应为 SNR-XXXXXXXX") }
+                return@launch
+            }
+
+            _uiState.update { it.copy(isLoading = true, error = null) }
+
+            // 查询老人账户是否存在
+            seniorRepository.getSeniorById(id)
+                .onSuccess { senior ->
+                    // 保存本地会话（仅用于应用内导航与状态）
+                    localDataSource.saveUser(
+                        id = senior.id,
+                        username = senior.name,
+                        role = "senior"
+                    )
+
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isSuccess = true,
+                            error = null,
+                            virtualIdError = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isSuccess = false,
+                            error = error.message ?: "未找到该老人ID，请检查后重试"
+                        )
+                    }
+                }
         }
     }
     

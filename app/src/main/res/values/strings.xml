@@ -23,6 +23,46 @@
     <string name="login_button">Login</string>
     <string name="login_no_account">Don\'t have an account?</string>
     <string name="login_register_link">Register</string>
+    <!-- Senior Virtual ID Login -->
+    <string name="senior_virtual_id_label">Virtual ID</string>
+    <string name="senior_virtual_id_hint">Enter your Senior ID, e.g., SNR-XXXXXXXX</string>
+    
+    <!-- Register Screen -->
+    <string name="senior_register_title">Senior Register</string>
+    <string name="caregiver_register_title">Caregiver Register</string>
+    <string name="register_create_account">Create your account</string>
+    <string name="register_username_label">Username</string>
+    <string name="register_username_hint">Enter your username</string>
+    <string name="register_email_label">Email</string>
+    <string name="register_email_hint">Enter your email address</string>
+    <string name="register_phone_label">Phone Number</string>
+    <string name="register_phone_hint">Enter your phone number</string>
+    <string name="register_password_label">Password</string>
+    <string name="register_password_hint">Enter your password</string>
+    <string name="register_confirm_password_label">Confirm Password</string>
+    <string name="register_confirm_password_hint">Confirm your password</string>
+    <string name="register_terms_agreement">I agree to the Privacy Policy and Terms of Service</string>
+    <string name="register_button">Register</string>
+    <string name="register_have_account">Already have an account?</string>
+    <string name="register_login_link">Login</string>
+    
+    <!-- Forgot Password Screen -->
+    <string name="forgot_password_title">Reset Password</string>
+    <string name="forgot_password_instruction">Enter your email address and we\'ll send you a link to reset your password</string>
+    <string name="forgot_password_email_label">Email Address</string>
+    <string name="forgot_password_email_hint">Enter your email</string>
+    <string name="forgot_password_send_button">Send Reset Link</string>
+    <string name="forgot_password_back_to_login">Back to Login</string>
+    <string name="forgot_password_success">Password reset link sent! Please check your email.</string>
+    
+    <!-- Email Verification Screen -->
+    <string name="email_verification_title">Verify Your Email</string>
+    <string name="email_verification_instruction">We\'ve sent a verification link to:</string>
+    <string name="email_verification_check_inbox">Please check your inbox and click the link to verify your account</string>
+    <string name="email_verification_go_to_login">Go to Login</string>
+    <string name="email_verification_resend">Didn\'t receive the email?</string>
+    <string name="email_verification_resend_button">Resend Email</string>
+    <string name="email_verification_spam_note">Note: Check your spam folder if you don\'t see the email</string>
     
     <!-- Home Screen -->
     <string name="greeting_hello">Hello, Mrs. Zhang</string>

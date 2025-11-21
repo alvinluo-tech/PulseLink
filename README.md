@@ -27,6 +27,12 @@ PulseLink is designed to help seniors and their caregivers manage health data, m
 - **Take/Miss Tracking**: Record medication adherence
 - **Medication Details**: Dosage, timing, and medication name tracking
 
+### 👥 Senior Account Management
+- **Create Senior Account**: Creating a senior auto-links the creator; shows a success snackbar and returns to the caregiver home for viewing linked seniors.
+- **Manage Seniors (Created List)**: Displays only the seniors that you created (`creatorId`).
+- **Link Senior Account**: Link an existing senior by ID; prevents duplicate links and stores multiple caregivers via `caregiverIds`.
+- **Copy Senior ID**: One-click copy button next to the ID in the created seniors list.
+
 ### 🤖 AI Voice Assistant
 - **Conversational Interface**: Chat-based interaction for health queries
 - **Voice Input Support**: Speak to ask questions
@@ -59,6 +65,23 @@ app/
 ├── di/                       # Dependency Injection
 └── ui/                       # UI theme and components
 ```
+
+## 🧩 Data Model
+
+### Senior
+- `id: String` – Unique virtual ID (e.g., `SNR-XXXXXXXX`)
+- `name: String`, `age: Int`, `gender: String`
+- `healthHistory: HealthHistory`
+- `caregiverIds: List<String>` – Multiple caregivers linked to this senior
+- `creatorId: String` – Caregiver who created this senior account
+- `createdAt: Long`
+
+### HealthHistory
+- `bloodPressure: BloodPressureRecord?`, `heartRate: Int?`, `bloodSugar: Double?`
+- `medicalConditions: List<String>`, `medications: List<String>`, `allergies: List<String>`
+
+### BloodPressureRecord
+- `systolic: Int`, `diastolic: Int`, `recordedAt: Long`
 
 ## 🛠️ Tech Stack
 
@@ -248,7 +271,6 @@ This project uses Firebase services. To set it up:
    Or rename the example file:
    ```bash
    cp app/google-services.json.example app/google-services.json
-   # Then update with your actual Firebase credentials
    ```
 
 4. **Enable Firebase Services** (in Firebase Console):
@@ -267,3 +289,23 @@ API_KEY=your_api_key_here
 ---
 
 **Note**: This is an educational/demonstration project for senior health care management. Consult healthcare professionals for medical advice.
+
+---
+
+## 🛠️ Developer Notes
+
+### Hilt Codegen: KAPT → KSP
+- Kotlin `2.0.x` is used; Hilt code generation is configured via KSP:
+  - Replace `kotlin-kapt` with `com.google.devtools.ksp` in Gradle plugins.
+  - Use `ksp("com.google.dagger:hilt-compiler:<version>")` instead of `kapt`.
+- After switching, run:
+```bash
+./gradlew clean assembleDebug
+```
+
+### Repository & Queries
+- `SeniorRepository` adds `getSeniorsByCreator(creatorId)`.
+- `getSeniorsByCaregiver(caregiverId)` uses `whereArrayContains("caregiverIds", caregiverId)`.
+
+### Navigation Behavior
+- After successful senior creation, the app navigates to `CaregiverHome` to show linked seniors.

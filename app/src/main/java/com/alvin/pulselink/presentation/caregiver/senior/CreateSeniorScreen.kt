@@ -2,6 +2,7 @@ package com.alvin.pulselink.presentation.caregiver.senior
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,11 +12,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -24,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alvin.pulselink.domain.model.Senior
+import kotlinx.coroutines.launch
 
 /**
  * 创建老人账户页面
@@ -53,9 +58,9 @@ fun CreateSeniorScreen(
     LaunchedEffect(createState.isSuccess) {
         if (createState.isSuccess) {
             snackbarHostState.showSnackbar("老人账户创建成功！")
-            viewModel.resetCreateForm()
-            viewModel.loadSeniors()
-            showCreateForm = false
+            showCreateForm = false  // 先关闭表单
+            viewModel.resetCreateForm()  // 然后重置状态
+            viewModel.loadSeniors()  // 重新加载列表
         }
     }
     
@@ -69,7 +74,7 @@ fun CreateSeniorScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Create Senior Account", fontWeight = FontWeight.Bold) },
+                title = { Text("Create Senior Account", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF111827)) },
                 navigationIcon = {
                     IconButton(onClick = {
                         if (showCreateForm) {
@@ -80,13 +85,17 @@ fun CreateSeniorScreen(
                         }
                     }) {
                         Icon(
-                            imageVector = if (showCreateForm) Icons.Default.ArrowBack else Icons.Default.Close,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
                             tint = Color(0xFF8B5CF6)
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.White,
+                    titleContentColor = Color(0xFF111827),
+                    navigationIconContentColor = Color(0xFF8B5CF6)
+                )
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -191,11 +200,16 @@ private fun SeniorsList(seniors: List<Senior>) {
 
 @Composable
 private fun SeniorCard(senior: Senior) {
+    val clipboardManager = LocalClipboardManager.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(Color.White),
-        elevation = CardDefaults.cardElevation(2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp, pressedElevation = 6.dp),
+        onClick = {}
     ) {
         Column(Modifier.padding(20.dp)) {
             Row(
@@ -205,7 +219,31 @@ private fun SeniorCard(senior: Senior) {
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(senior.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text(senior.id, fontSize = 12.sp, color = Color(0xFF7C3AED))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(senior.id, fontSize = 12.sp, color = Color(0xFF7C3AED))
+                        IconButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(senior.id))
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        message = "ID copied to clipboard",
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Copy ID",
+                                modifier = Modifier.size(16.dp),
+                                tint = Color(0xFF7C3AED)
+                            )
+                        }
+                    }
                 }
                 Surface(
                     shape = RoundedCornerShape(8.dp),

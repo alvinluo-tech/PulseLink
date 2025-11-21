@@ -6,7 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.navigation.compose.rememberNavController
-import com.alvin.pulselink.presentation.navigation.NavGraph
+import com.alvin.pulselink.presentation.nav.AppNavigation
 import com.alvin.pulselink.ui.theme.PulseLinkTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainApp() {
     val navController = rememberNavController()
-    NavGraph(navController = navController)
+    AppNavigation(navController = navController)
 }
 
 @Composable

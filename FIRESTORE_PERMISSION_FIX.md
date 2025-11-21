@@ -95,6 +95,51 @@ service cloud.firestore {
     match /health_data/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // 老人账户 seniors（支持多护理者 + 创建者）
+    match /seniors/{seniorId} {
+      function isAuthenticated() {
+        return request.auth != null;
+      }
+
+      function isCreator() {
+        return isAuthenticated() && resource.data.creatorId == request.auth.uid;
+      }
+
+      function isCaregiverBound() {
+        return isAuthenticated() && (request.auth.uid in resource.data.caregiverIds);
+      }
+
+      // 创建：必须由创建者执行，且创建者在 caregiverIds 中
+      allow create: if isAuthenticated()
+                    && request.resource.data.creatorId == request.auth.uid
+                    && (request.auth.uid in request.resource.data.caregiverIds)
+                    && request.resource.data.caregiverIds.size() >= 1
+                    && request.resource.data.keys().hasOnly([
+                      'name','age','gender','healthHistory','caregiverIds','creatorId','createdAt'
+                    ]);
+
+      // 读取：创建者或已绑定护理者
+      allow read: if isCreator() || isCaregiverBound();
+
+      // 删除：仅创建者
+      allow delete: if isCreator();
+
+      // 更新：
+      // 1) 创建者无条件；
+      // 2) 未绑定护理者仅允许自我绑定（只新增自身到 caregiverIds，其他字段不变）
+      allow update: if isCreator()
+                    || (
+                      isAuthenticated()
+                      && !(request.auth.uid in resource.data.caregiverIds)
+                      && (request.auth.uid in request.resource.data.caregiverIds)
+                      && request.resource.data.caregiverIds.size() == resource.data.caregiverIds.size() + 1
+                      && request.resource.data.creatorId == resource.data.creatorId
+                      && request.resource.data.diff(resource.data).changedKeys().hasOnly(['caregiverIds'])
+                      && request.resource.data.caregiverIds.hasAll(resource.data.caregiverIds)
+                    )
+                    || isCaregiverBound();
+    }
   }
 }
 ```
@@ -145,7 +190,7 @@ service cloud.firestore {
 
 1. **User Profile 格式：** `username|role`（使用 `|` 分隔）
 2. **首次登录必须联网：** 需要创建 Firestore 文档
-3. **Firestore 规则必须配置：** 否则测试连接会失败
+3. **Firestore 规则必须配置：** 否则测试连接会失败（尤其是 `seniors` 集合的多护理者绑定规则）
 
 ## 📊 数据流
 

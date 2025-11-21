@@ -27,6 +27,12 @@ PulseLink 旨在帮助老年人和护理人员管理健康数据、药物提醒�
 - **服用/错过追踪**：记录用药依从性
 - **药物详情**：剂量、时间和药物名称追踪
 
+### 👥 老人账户管理
+- **创建老人账户**：创建老人后自动绑定创建者；显示成功提示消息，并返回子女端主页以查看已绑定老人。
+- **管理老人（我创建的列表）**：仅显示由当前用户创建的老人（`creatorId`）。
+- **绑定老人账户**：通过老人虚拟 ID 进行绑定；防重复绑定，并通过 `caregiverIds` 支持多个护理人员。
+- **一键复制老人 ID**：在已创建老人列表中，ID 旁提供复制按钮。
+
 ### 🤖 AI 语音助手
 - **对话界面**：基于聊天的健康咨询交互
 - **语音输入支持**：说话提问
@@ -59,6 +65,23 @@ app/
 ├── di/                       # 依赖注入
 └── ui/                       # UI 主题和组件
 ```
+
+## 🧩 数据模型
+
+### Senior（老人模型）
+- `id: String` – 唯一虚拟 ID（例如 `SNR-XXXXXXXX`）
+- `name: String`、`age: Int`、`gender: String`
+- `healthHistory: HealthHistory`
+- `caregiverIds: List<String>` – 支持多个护理人员绑定同一老人
+- `creatorId: String` – 创建该老人账户的护理人员 ID
+- `createdAt: Long`
+
+### HealthHistory（健康历史）
+- `bloodPressure: BloodPressureRecord?`、`heartRate: Int?`、`bloodSugar: Double?`
+- `medicalConditions: List<String>`、`medications: List<String>`、`allergies: List<String>`
+
+### BloodPressureRecord（血压记录）
+- `systolic: Int`、`diastolic: Int`、`recordedAt: Long`
 
 ## 🛠️ 技术栈
 
@@ -268,3 +291,23 @@ API_KEY=your_api_key_here
 ---
 
 **注意**：这是一个面向老年人健康护理管理的教育/演示项目。如需医疗建议，请咨询医疗专业人员。
+
+---
+
+## 🛠️ 开发者说明
+
+### Hilt 代码生成：KAPT → KSP
+- 项目使用 Kotlin `2.0.x`；Hilt 代码生成通过 KSP 配置：
+  - 在 Gradle 插件中将 `kotlin-kapt` 替换为 `com.google.devtools.ksp`。
+  - 依赖层改为 `ksp("com.google.dagger:hilt-compiler:<version>")`。
+- 切换后建议执行：
+```bash
+./gradlew clean assembleDebug
+```
+
+### 仓库与查询
+- `SeniorRepository` 新增 `getSeniorsByCreator(creatorId)`。
+- `getSeniorsByCaregiver(caregiverId)` 使用 `whereArrayContains("caregiverIds", caregiverId)` 查询。
+
+### 导航行为
+- 创建老人成功后，应用导航到 `CaregiverHome` 展示已绑定老人。

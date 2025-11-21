@@ -4,8 +4,10 @@ import android.content.Context
 import com.alvin.pulselink.data.local.LocalDataSource
 import com.alvin.pulselink.data.repository.AuthRepositoryImpl
 import com.alvin.pulselink.data.repository.HealthRepositoryImpl
+import com.alvin.pulselink.data.repository.SeniorRepositoryImpl
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.repository.HealthRepository
+import com.alvin.pulselink.domain.repository.SeniorRepository
 import com.alvin.pulselink.domain.usecase.LoginUseCase
 import com.alvin.pulselink.domain.usecase.RegisterUseCase
 import com.alvin.pulselink.domain.usecase.ResetPasswordUseCase
@@ -67,9 +69,21 @@ object AppModule {
     @Provides
     @Singleton
     fun provideHealthRepository(
-        firestore: FirebaseFirestore
+        firestore: FirebaseFirestore,
+        firebaseAuth: FirebaseAuth
     ): HealthRepository {
-        return HealthRepositoryImpl(firestore)
+        return HealthRepositoryImpl(firestore, firebaseAuth)
+    }
+    
+    /**
+     * 提供 SeniorRepository 实现
+     */
+    @Provides
+    @Singleton
+    fun provideSeniorRepository(
+        firestore: FirebaseFirestore
+    ): SeniorRepository {
+        return SeniorRepositoryImpl(firestore)
     }
     
     @Provides

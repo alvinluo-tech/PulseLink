@@ -9,6 +9,8 @@ data class AuthUiState(
     val email: String = "",
     val password: String = "",
     val agreedToTerms: Boolean = false,
+    // 老人端登录字段（虚拟ID）
+    val virtualId: String = "",
     
     // 注册额外字段
     val username: String = "",
@@ -27,6 +29,7 @@ data class AuthUiState(
     val phoneError: String? = null,
     val passwordError: String? = null,
     val confirmPasswordError: String? = null,
+    val virtualIdError: String? = null,
     
     // 注册成功标志
     val registrationSuccess: Boolean = false
