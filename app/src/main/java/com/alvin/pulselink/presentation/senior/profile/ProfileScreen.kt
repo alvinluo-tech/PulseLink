@@ -2,8 +2,10 @@ package com.alvin.pulselink.presentation.senior.profile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -63,6 +65,7 @@ fun ProfileScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
+                    .verticalScroll(rememberScrollState())
                     .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -84,6 +87,9 @@ fun ProfileScreen(
                     onSettingsClick = onNavigateToSettings,
                     onLogout = onLogout
                 )
+                
+                // 添加底部间距，确保内容不被底部导航栏遮挡
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
