@@ -38,12 +38,13 @@ class HealthRepositoryImpl @Inject constructor(
             } else {
                 val systolic = (doc.getLong("systolic") ?: doc.getDouble("systolic")?.toLong())?.toInt()
                 val diastolic = (doc.getLong("diastolic") ?: doc.getDouble("diastolic")?.toLong())?.toInt()
+                val heartRate = (doc.getLong("heartRate") ?: doc.getDouble("heartRate")?.toLong())?.toInt() ?: 0
                 val timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
 
                 if (systolic == null || diastolic == null) {
                     Result.success(null)
                 } else {
-                    Result.success(HealthData(systolic, diastolic, timestamp))
+                    Result.success(HealthData(systolic, diastolic, heartRate, timestamp))
                 }
             }
         } catch (e: Exception) {
@@ -70,9 +71,10 @@ class HealthRepositoryImpl @Inject constructor(
             val list = snapshot.documents.mapNotNull { doc ->
                 val systolic = (doc.getLong("systolic") ?: doc.getDouble("systolic")?.toLong())?.toInt()
                 val diastolic = (doc.getLong("diastolic") ?: doc.getDouble("diastolic")?.toLong())?.toInt()
+                val heartRate = (doc.getLong("heartRate") ?: doc.getDouble("heartRate")?.toLong())?.toInt() ?: 0
                 val timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
                 if (systolic == null || diastolic == null) null
-                else HealthData(systolic, diastolic, timestamp)
+                else HealthData(systolic, diastolic, heartRate, timestamp)
             }
 
             Result.success(list)
@@ -87,8 +89,8 @@ class HealthRepositoryImpl @Inject constructor(
             val data = hashMapOf(
                 "systolic" to healthData.systolic,
                 "diastolic" to healthData.diastolic,
-                "timestamp" to (healthData.timestamp)
-                // heartRate 字段暂未纳入领域模型，如需要可在此扩展
+                "heartRate" to healthData.heartRate,
+                "timestamp" to healthData.timestamp
             )
 
             firestore

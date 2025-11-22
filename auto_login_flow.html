@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PulseLink 无感登录流程图</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 40px;
+        }
+        .flow-diagram {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .step {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            position: relative;
+        }
+        .step.start {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .step.check {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .step.auth {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+        .step.senior {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        }
+        .step.caregiver {
+            background: linear-gradient(135deg, #30cfd0 0%, #330867 100%);
+        }
+        .step.welcome {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        }
+        .arrow {
+            text-align: center;
+            color: #667eea;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .branch-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+        }
+        .branch {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .branch-label {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            font-weight: bold;
+            color: #555;
+        }
+        .scenario {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .scenario h3 {
+            color: #667eea;
+            margin-top: 0;
+        }
+        .scenario-flow {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+        .code-block {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+        .keyword {
+            color: #66d9ef;
+        }
+        .function {
+            color: #a6e22e;
+        }
+        .string {
+            color: #e6db74;
+        }
+        .comment {
+            color: #75715e;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 PulseLink 无感登录流程图</h1>
+        
+        <h2>📊 主流程图</h2>
+        <div class="flow-diagram">
+            <div class="step start">App 启动</div>
+            <div class="arrow">↓</div>
+            <div class="step check">AuthCheckScreen<br>显示加载指示器</div>
+            <div class="arrow">↓</div>
+            <div class="step auth">检查 Firebase Auth currentUser</div>
+            <div class="arrow">↓</div>
+        </div>
+        
+        <div class="branch-container">
+            <div class="branch">
+                <div class="branch-label">✅ 已登录 (currentUser != null)</div>
+                <div class="arrow">↓</div>
+                <div class="step check">读取 LocalDataSource<br>获取角色信息</div>
+                <div class="arrow">↓</div>
+                <div class="branch-container">
+                    <div class="branch">
+                        <div class="step senior">老人端主页<br>SeniorHome</div>
+                        <small style="text-align: center; color: #666;">role = "SENIOR"</small>
+                    </div>
+                    <div class="branch">
+                        <div class="step caregiver">子女端主页<br>CaregiverHome</div>
+                        <small style="text-align: center; color: #666;">role = "CAREGIVER"</small>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="branch">
+                <div class="branch-label">❌ 未登录 (currentUser == null)</div>
+                <div class="arrow">↓</div>
+                <div class="step welcome">欢迎页<br>WelcomeScreen<br>选择角色登录</div>
+            </div>
+        </div>
+        
+        <h2>🎯 使用场景</h2>
+        
+        <div class="scenario">
+            <h3>场景 1: 首次安装 / 登出后</h3>
+            <div class="scenario-flow">
+                App 启动 → AuthCheck → Firebase Auth (无用户) → Welcome Screen → 用户选择角色登录
+            </div>
+        </div>
+        
+        <div class="scenario">
+            <h3>场景 2: 已登录用户重启 App ⭐</h3>
+            <div class="scenario-flow">
+                App 启动 → AuthCheck → Firebase Auth (有用户) + LocalDataSource (有角色)<br>
+                → 直接进入对应主页 (老人端/子女端) 🚀
+            </div>
+        </div>
+        
+        <div class="scenario">
+            <h3>场景 3: 用户登出</h3>
+            <div class="scenario-flow">
+                点击登出 → AuthRepository.logout() → 清除 LocalDataSource → Firebase Auth 登出<br>
+                → 导航到 Welcome Screen
+            </div>
+        </div>
+        
+        <div class="scenario">
+            <h3>场景 4: 缓存异常 (安全机制)</h3>
+            <div class="scenario-flow">
+                App 启动 → AuthCheck → Firebase Auth (有用户) + LocalDataSource (空)<br>
+                → 返回 Welcome Screen → 用户重新登录
+            </div>
+        </div>
+        
+        <h2>💻 核心代码</h2>
+        
+        <h3>AuthCheckScreen.kt</h3>
+        <div class="code-block">
+<span class="keyword">@Composable</span>
+<span class="keyword">fun</span> <span class="function">AuthCheckScreen</span>(
+    localDataSource: LocalDataSource,
+    onNavigateToSeniorHome: () -> Unit,
+    onNavigateToCaregiverHome: () -> Unit,
+    onNavigateToWelcome: () -> Unit
+) {
+    <span class="comment">// 显示加载指示器</span>
+    Box(modifier = Modifier.fillMaxSize()) {
+        CircularProgressIndicator()
+    }
+    
+    <span class="comment">// 启动时执行身份验证检查</span>
+    <span class="function">LaunchedEffect</span>(Unit) {
+        <span class="function">withContext</span>(Dispatchers.IO) {
+            <span class="comment">// 检查 Firebase Auth 的 currentUser</span>
+            <span class="keyword">val</span> firebaseUser = FirebaseAuth.getInstance().currentUser
+            
+            <span class="keyword">if</span> (firebaseUser != <span class="keyword">null</span>) {
+                <span class="comment">// 用户已登录，读取本地缓存的角色信息</span>
+                <span class="keyword">val</span> userInfo = localDataSource.getUser()
+                
+                <span class="keyword">if</span> (userInfo != <span class="keyword">null</span>) {
+                    <span class="keyword">val</span> (_, _, role) = userInfo
+                    
+                    <span class="comment">// 根据角色导航到对应的主页</span>
+                    <span class="function">withContext</span>(Dispatchers.Main) {
+                        <span class="keyword">when</span> (role?.uppercase()) {
+                            <span class="string">"SENIOR"</span> -> onNavigateToSeniorHome()
+                            <span class="string">"CAREGIVER"</span> -> onNavigateToCaregiverHome()
+                            <span class="keyword">else</span> -> onNavigateToWelcome()
+                        }
+                    }
+                } <span class="keyword">else</span> {
+                    <span class="comment">// 本地缓存为空，返回欢迎页</span>
+                    <span class="function">withContext</span>(Dispatchers.Main) {
+                        onNavigateToWelcome()
+                    }
+                }
+            } <span class="keyword">else</span> {
+                <span class="comment">// 用户未登录，导航到欢迎页</span>
+                <span class="function">withContext</span>(Dispatchers.Main) {
+                    onNavigateToWelcome()
+                }
+            }
+        }
+    }
+}
+        </div>
+        
+        <h3>AppNavigation.kt (启动配置)</h3>
+        <div class="code-block">
+<span class="keyword">@Composable</span>
+<span class="keyword">fun</span> <span class="function">AppNavigation</span>(
+    navController: NavHostController,
+    startDestination: String = Screen.AuthCheck.route  <span class="comment">// 启动页改为 AuthCheck</span>
+) {
+    <span class="keyword">val</span> context = LocalContext.current
+    <span class="keyword">val</span> localDataSource = LocalDataSource(context)
+    
+    <span class="function">NavHost</span>(
+        navController = navController,
+        startDestination = startDestination
+    ) {
+        <span class="comment">// ===== 启动时的身份验证检查 =====</span>
+        <span class="function">composable</span>(route = Screen.AuthCheck.route) {
+            <span class="function">AuthCheckScreen</span>(
+                localDataSource = localDataSource,
+                onNavigateToSeniorHome = {
+                    navController.navigate(Screen.SeniorHome.route) {
+                        <span class="comment">// 清空返回栈，防止用户返回到 AuthCheck 页面</span>
+                        popUpTo(Screen.AuthCheck.route) { inclusive = <span class="keyword">true</span> }
+                    }
+                },
+                onNavigateToCaregiverHome = {
+                    navController.navigate(Screen.CaregiverHome.route) {
+                        popUpTo(Screen.AuthCheck.route) { inclusive = <span class="keyword">true</span> }
+                    }
+                },
+                onNavigateToWelcome = {
+                    navController.navigate(Screen.Welcome.route) {
+                        popUpTo(Screen.AuthCheck.route) { inclusive = <span class="keyword">true</span> }
+                    }
+                }
+            )
+        }
+        <span class="comment">// ... 其他页面配置</span>
+    }
+}
+        </div>
+        
+        <h2>✅ 测试验证</h2>
+        <div class="scenario">
+            <h3>测试步骤:</h3>
+            <ol>
+                <li><strong>首次安装测试</strong>: 清除 App 数据 → 启动 → 应显示 Welcome Screen</li>
+                <li><strong>登录后重启测试</strong>: 登录任意账号 → 关闭 App → 重启 → 应直接进入主页</li>
+                <li><strong>登出测试</strong>: 已登录状态 → 点击登出 → 应返回 Welcome Screen → 重启 App → 应显示 Welcome Screen</li>
+                <li><strong>双端切换测试</strong>: 老人端登录 → 重启 (进老人端) → 登出 → 子女端登录 → 重启 (进子女端)</li>
+            </ol>
+        </div>
+        
+        <h2>🔒 安全说明</h2>
+        <ul>
+            <li>✅ LocalDataSource 仅存储角色信息，不存储密码</li>
+            <li>✅ 实际身份验证仍依赖 Firebase Auth</li>
+            <li>✅ 如果 Firebase Session 过期，用户需要重新登录</li>
+            <li>✅ 缓存异常时自动返回登录页，避免安全风险</li>
+        </ul>
+        
+        <div style="text-align: center; margin-top: 40px; padding: 20px; background: #f0f0f0; border-radius: 8px;">
+            <h3 style="color: #667eea; margin-top: 0;">🎉 无感登录实现完成!</h3>
+            <p style="margin: 0; color: #666;">构建状态: <strong style="color: #43e97b;">BUILD SUCCESSFUL ✓</strong></p>
+        </div>
+    </div>
+</body>
+</html>

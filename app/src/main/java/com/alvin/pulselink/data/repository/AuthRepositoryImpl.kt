@@ -1,5 +1,6 @@
 package com.alvin.pulselink.data.repository
 
+import com.alvin.pulselink.data.local.LocalDataSource
 import com.alvin.pulselink.domain.model.User
 import com.alvin.pulselink.domain.model.UserRole
 import com.alvin.pulselink.domain.repository.AuthRepository
@@ -13,7 +14,8 @@ import javax.inject.Singleton
 @Singleton
 class AuthRepositoryImpl @Inject constructor(
     private val firebaseAuth: FirebaseAuth,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val localDataSource: LocalDataSource
 ) : AuthRepository {
     
     /**
@@ -27,18 +29,25 @@ class AuthRepositoryImpl @Inject constructor(
             }
             val user = authResult.user ?: throw Exception("Login failed")
             
+            // 从 displayName 中解析用户名和角色
+            val displayName = user.displayName ?: "User|SENIOR"
+            val parts = displayName.split("|")
+            val username = parts.getOrNull(0) ?: "User"
+            val role = parts.getOrNull(1) ?: "SENIOR"
+            
+            // 保存到本地 DataStore
+            localDataSource.saveUser(
+                id = user.uid,
+                username = username,
+                role = role.lowercase()  // "SENIOR" -> "senior"
+            )
+            
             // 尽量确保 Firestore 中有用户文档，但失败不影响登录成功
             runCatching {
                 val userDoc = withTimeout(8_000) {
                     firestore.collection("users").document(user.uid).get().await()
                 }
                 if (!userDoc.exists()) {
-                    // 从 User Profile 中解析用户名和角色
-                    val displayName = user.displayName ?: "User|SENIOR"
-                    val parts = displayName.split("|")
-                    val username = parts.getOrNull(0) ?: "User"
-                    val role = parts.getOrNull(1) ?: "SENIOR"
-                    
                     // 创建用户文档
                     val newUserDoc = hashMapOf(
                         "uid" to user.uid,
@@ -201,6 +210,9 @@ class AuthRepositoryImpl @Inject constructor(
      * 登出
      */
     override suspend fun logout() {
+        // 清除本地缓存
+        localDataSource.clearUser()
+        // 登出 Firebase
         firebaseAuth.signOut()
     }
     

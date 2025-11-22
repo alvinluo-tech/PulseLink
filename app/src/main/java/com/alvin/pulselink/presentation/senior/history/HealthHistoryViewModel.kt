@@ -44,7 +44,7 @@ class HealthHistoryViewModel @Inject constructor(
                             time = timeFmt.format(date),
                             systolic = hd.systolic,
                             diastolic = hd.diastolic,
-                            heartRate = 0, // 数据库暂未提供心率，缺省为0
+                            heartRate = hd.heartRate,
                             status = classifyStatus(hd.systolic, hd.diastolic)
                         )
                     }

@@ -2,6 +2,7 @@ package com.alvin.pulselink.presentation.senior.health
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.alvin.pulselink.domain.usecase.SaveHealthDataUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,7 +12,9 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class HealthDataViewModel @Inject constructor() : ViewModel() {
+class HealthDataViewModel @Inject constructor(
+    private val saveHealthDataUseCase: SaveHealthDataUseCase
+) : ViewModel() {
     
     private val _uiState = MutableStateFlow(HealthDataUiState())
     val uiState: StateFlow<HealthDataUiState> = _uiState.asStateFlow()
@@ -48,27 +51,46 @@ class HealthDataViewModel @Inject constructor() : ViewModel() {
                     _uiState.update { 
                         it.copy(
                             isLoading = false,
-                            error = "Please fill in all fields"
+                            error = "请填写所有字段"
                         )
                     }
                     return@launch
                 }
                 
-                // TODO: Save to repository
-                // Simulate network delay
-                kotlinx.coroutines.delay(500)
+                // Call use case to save
+                val result = saveHealthDataUseCase(
+                    systolic = systolic,
+                    diastolic = diastolic,
+                    heartRate = heartRate
+                )
                 
-                _uiState.update { 
-                    it.copy(
-                        isLoading = false,
-                        isSaved = true
-                    )
-                }
+                result.fold(
+                    onSuccess = {
+                        _uiState.update { 
+                            it.copy(
+                                isLoading = false,
+                                isSaved = true,
+                                // Clear form after successful save
+                                systolicPressure = "",
+                                diastolicPressure = "",
+                                heartRate = ""
+                            )
+                        }
+                    },
+                    onFailure = { exception ->
+                        _uiState.update { 
+                            it.copy(
+                                isLoading = false,
+                                error = exception.message ?: "保存健康数据失败"
+                            )
+                        }
+                    }
+                )
             } catch (e: Exception) {
                 _uiState.update { 
                     it.copy(
                         isLoading = false,
-                        error = e.message ?: "Failed to save health data"
+                        error = e.message ?: "保存健康数据失败"
                     )
                 }
             }

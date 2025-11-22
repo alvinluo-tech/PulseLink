@@ -45,7 +45,7 @@ fun HealthDataScreen(
     // Handle success
     LaunchedEffect(uiState.isSaved) {
         if (uiState.isSaved) {
-            Toast.makeText(context, "Health data saved successfully!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "健康数据已保存!", Toast.LENGTH_SHORT).show()
             viewModel.resetSavedState()
         }
     }
@@ -63,7 +63,7 @@ fun HealthDataScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Health Data",
+                        text = "Health Report",
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -116,7 +116,7 @@ fun HealthDataScreen(
             
             // Instruction Text
             Text(
-                text = "Enter your health data",
+                text = "Enter your health information",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Medium,
                 color = Color(0xFF2C3E50),
@@ -156,6 +156,10 @@ fun HealthDataScreen(
             Spacer(modifier = Modifier.height(40.dp))
             
             // Save Button
+            val hasInput = uiState.systolicPressure.isNotEmpty() && 
+                          uiState.diastolicPressure.isNotEmpty() && 
+                          uiState.heartRate.isNotEmpty()
+            
             Button(
                 onClick = { viewModel.saveHealthData() },
                 modifier = Modifier
@@ -163,7 +167,7 @@ fun HealthDataScreen(
                     .height(56.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFD0D5DD),
+                    containerColor = if (hasInput) Color(0xFF00E676) else Color(0xFFD0D5DD),
                     contentColor = Color.White
                 ),
                 enabled = !uiState.isLoading

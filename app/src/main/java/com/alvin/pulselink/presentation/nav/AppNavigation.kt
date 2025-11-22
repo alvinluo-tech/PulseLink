@@ -2,6 +2,7 @@ package com.alvin.pulselink.presentation.nav
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -9,7 +10,9 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.alvin.pulselink.data.local.LocalDataSource
 import com.alvin.pulselink.domain.model.UserRole
+import com.alvin.pulselink.presentation.auth.AuthCheckScreen
 import com.alvin.pulselink.presentation.auth.AuthViewModel
 import com.alvin.pulselink.presentation.auth.WelcomeScreen
 import com.alvin.pulselink.presentation.auth.LoginScreen
@@ -41,12 +44,40 @@ import com.alvin.pulselink.presentation.senior.voice.VoiceAssistantScreen
 @Composable
 fun AppNavigation(
     navController: NavHostController,
-    startDestination: String = Screen.Welcome.route
+    startDestination: String = Screen.AuthCheck.route
 ) {
+    val context = LocalContext.current
+    val localDataSource = LocalDataSource(context)
+    
     NavHost(
         navController = navController,
         startDestination = startDestination
     ) {
+        // ===== 启动时的身份验证检查 =====
+        composable(route = Screen.AuthCheck.route) {
+            AuthCheckScreen(
+                localDataSource = localDataSource,
+                onNavigateToSeniorHome = {
+                    navController.navigate(Screen.SeniorHome.route) {
+                        // 清空返回栈，防止用户返回到 AuthCheck 页面
+                        popUpTo(Screen.AuthCheck.route) { inclusive = true }
+                    }
+                },
+                onNavigateToCaregiverHome = {
+                    navController.navigate(Screen.CaregiverHome.route) {
+                        // 清空返回栈，防止用户返回到 AuthCheck 页面
+                        popUpTo(Screen.AuthCheck.route) { inclusive = true }
+                    }
+                },
+                onNavigateToWelcome = {
+                    navController.navigate(Screen.Welcome.route) {
+                        // 清空返回栈，防止用户返回到 AuthCheck 页面
+                        popUpTo(Screen.AuthCheck.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+        
         // ===== 欢迎页 - 角色选择入口 =====
         composable(route = Screen.Welcome.route) {
             WelcomeScreen(

@@ -68,9 +68,10 @@ object AppModule {
     @Singleton
     fun provideAuthRepository(
         firebaseAuth: FirebaseAuth,
-        firestore: FirebaseFirestore
+        firestore: FirebaseFirestore,
+        localDataSource: LocalDataSource
     ): AuthRepository {
-        return AuthRepositoryImpl(firebaseAuth, firestore)
+        return AuthRepositoryImpl(firebaseAuth, firestore, localDataSource)
     }
     
     /**

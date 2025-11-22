@@ -148,7 +148,7 @@ fun FeatureCardsGrid(
             )
             FeatureCard(
                 title = stringResource(R.string.reminders_title),
-                subtitle = "${uiState.remindersCount} Today",
+                subtitle = uiState.nextReminderTime,
                 icon = Icons.Default.Notifications,
                 backgroundColor = ReminderOrange,
                 modifier = Modifier.weight(1f),

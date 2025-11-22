@@ -67,7 +67,7 @@
     <!-- Home Screen -->
     <string name="greeting_hello">Hello, Mrs. Zhang</string>
     <string name="greeting_subtitle">It\'s a beautiful day!</string>
-    <string name="health_data_title">Health\nData</string>
+    <string name="health_data_title">Health\nReport</string>
     <string name="health_data_value">BP 120/80</string>
     <string name="reminders_title">Reminders</string>
     <string name="reminders_count">3 Today</string>

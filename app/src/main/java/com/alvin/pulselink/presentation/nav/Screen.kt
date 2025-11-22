@@ -11,6 +11,9 @@ package com.alvin.pulselink.presentation.nav
 sealed class Screen(val route: String) {
     
     // ===== 认证相关（公共） =====
+    /** 启动时的身份验证检查页 */
+    object AuthCheck : Screen("auth_check")
+    
     /** 欢迎页 - 角色选择入口 */
     object Welcome : Screen("welcome")
     

@@ -30,7 +30,7 @@ export const chatWithAI = onCall(
             // 初始化 Gemini 客户端
             const genAI = new GoogleGenerativeAI(googleApiKey.value());
 
-            // 获取模型 (使用 Pro 版本，更稳定)
+            // 获取模型 
             const model = genAI.getGenerativeModel({ 
                 model: "gemini-2.0-flash",
                 // 系统人设在这里配置
@@ -127,7 +127,7 @@ export const createSeniorAccount = onCall(
                 username: name,
                 role: "SENIOR",
                 seniorId: seniorId, // 存储虚拟 ID 以便查询
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                createdAt: Date.now(), // 使用时间戳
                 createdBy: request.auth.uid, // 记录创建者（caregiver）
                 emailVerified: true
             });

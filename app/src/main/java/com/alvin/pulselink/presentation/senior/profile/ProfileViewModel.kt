@@ -29,16 +29,51 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             
-            // 优先从本地会话读取（虚拟ID登录保存了 Senior.name）
-            val local = localDataSource.getUser()
-            val localName = if (local?.third == "senior") local.second else null
-
+            // 1️⃣ 立即从本地缓存读取 (快速显示)
+            val cachedUser = localDataSource.getUser()
+            val cachedName = cachedUser?.second ?: "User"
+            
             _uiState.update { 
                 it.copy(
-                    userName = localName ?: "User",
+                    userName = cachedName,
                     isLoading = false
                 )
             }
+            
+            // 2️⃣ 后台静默同步 Firestore (检查更新)
+            syncFromFirestore()
+        }
+    }
+    
+    /**
+     * 静默同步 Firestore 数据
+     * 如果有变化，更新本地缓存和 UI
+     */
+    private suspend fun syncFromFirestore() {
+        try {
+            val firestoreUser = authRepository.getCurrentUser()
+            
+            if (firestoreUser != null) {
+                val cachedUser = localDataSource.getUser()
+                
+                // 检查是否有变化
+                if (cachedUser?.second != firestoreUser.username) {
+                    // 有变化,更新本地缓存
+                    localDataSource.saveUser(
+                        id = firestoreUser.id,
+                        username = firestoreUser.username,
+                        role = firestoreUser.role.name.lowercase()
+                    )
+                    
+                    // 更新 UI
+                    _uiState.update { 
+                        it.copy(userName = firestoreUser.username)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // 静默失败,不影响用户体验
+            // 用户仍然看到缓存的数据
         }
     }
 }
