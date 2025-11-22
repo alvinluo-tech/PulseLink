@@ -8,6 +8,7 @@ import com.alvin.pulselink.domain.model.Senior
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.repository.SeniorRepository
 import com.alvin.pulselink.domain.usecase.CreateSeniorUseCase
+import com.alvin.pulselink.util.QRCodeGenerator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -177,20 +178,31 @@ class ManageSeniorsViewModel @Inject constructor(
             )
             
             createSeniorUseCase(senior)
-                .onSuccess { createdSenior ->
+                .onSuccess { result ->
+                    // 生成二维码图片
+                    val qrBitmap = QRCodeGenerator.generateQRCode(result.qrCodeData)
+                    
                     _createSeniorState.update { it.copy(
                         isLoading = false,
-                        isSuccess = true
+                        isSuccess = true,
+                        createdAccountEmail = result.email,
+                        createdAccountPassword = result.password,
+                        qrCodeData = result.qrCodeData,
+                        qrCodeBitmap = qrBitmap
                     ) }
                     
                     // Reload seniors list
                     loadSeniors()
                     
-                    // 创建成功提示消息
-                    _manageSeniorsState.update { it.copy(successMessage = "老人账户创建成功，并已自动绑定") }
+                    // 创建成功提示消息（包含账户信息）
+                    _manageSeniorsState.update { 
+                        it.copy(
+                            successMessage = "老人账户创建成功！\n邮箱: ${result.email}\n密码: ${result.password}"
+                        ) 
+                    }
 
-                    // Reset form
-                    resetCreateForm()
+                    // 不自动重置表单，以便显示二维码
+                    // 由 UI 在用户确认后手动调用 resetCreateForm()
                     
                     onSuccess()
                 }

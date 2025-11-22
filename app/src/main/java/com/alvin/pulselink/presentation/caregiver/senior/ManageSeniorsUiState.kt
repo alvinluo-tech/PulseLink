@@ -1,5 +1,6 @@
 package com.alvin.pulselink.presentation.caregiver.senior
 
+import android.graphics.Bitmap
 import com.alvin.pulselink.domain.model.Senior
 
 /**
@@ -43,5 +44,11 @@ data class CreateSeniorUiState(
     val isSuccess: Boolean = false,
     
     // 已创建的老人列表
-    val createdSeniors: List<Senior> = emptyList()
+    val createdSeniors: List<Senior> = emptyList(),
+    
+    // 创建成功后的账户信息（用于显示二维码）
+    val createdAccountEmail: String? = null,
+    val createdAccountPassword: String? = null,
+    val qrCodeData: String? = null,
+    val qrCodeBitmap: Bitmap? = null  // 二维码图片
 )

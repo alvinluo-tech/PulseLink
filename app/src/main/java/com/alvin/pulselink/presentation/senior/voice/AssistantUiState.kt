@@ -11,7 +11,7 @@ data class AssistantUiState(
         ChatMessage(
             id = 1L,
             fromAssistant = true,
-            text = "Hello! I am your smart assistant.\nYou can ask me about health, weather, reminders and more."
+            text = "Hello! I'm PulseLink, your health assistant.\n\nI can help you with:\n• Health advice based on your blood pressure\n• Medication reminders\n• General wellness tips\n\nHow can I help you today?"
         )
     ),
     val inputText: String = "",

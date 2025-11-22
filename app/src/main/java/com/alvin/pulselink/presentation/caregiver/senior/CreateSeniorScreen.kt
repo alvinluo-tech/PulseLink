@@ -1,5 +1,6 @@
 package com.alvin.pulselink.presentation.caregiver.senior
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,13 +55,13 @@ fun CreateSeniorScreen(
         viewModel.loadSeniors()
     }
 
-    // 监听创建成功
+    // 监听创建成功 - 不再自动弹出二维码对话框
     LaunchedEffect(createState.isSuccess) {
         if (createState.isSuccess) {
+            showCreateForm = false  // 关闭创建表单
+            viewModel.resetCreateForm()
+            viewModel.loadSeniors()
             snackbarHostState.showSnackbar("老人账户创建成功！")
-            showCreateForm = false  // 先关闭表单
-            viewModel.resetCreateForm()  // 然后重置状态
-            viewModel.loadSeniors()  // 重新加载列表
         }
     }
     
@@ -127,6 +128,8 @@ fun CreateSeniorScreen(
             }
         }
     }
+    
+    // 二维码对话框不再在这里显示，改为在卡片上点击按钮显示
 }
 
 @Composable
@@ -203,13 +206,14 @@ private fun SeniorCard(senior: Senior) {
     val clipboardManager = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var showQRCodeDialog by remember { mutableStateOf(false) }
+    var qrCodeBitmap by remember { mutableStateOf<Bitmap?>(null) }
     
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp, pressedElevation = 6.dp),
-        onClick = {}
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp, pressedElevation = 6.dp)
     ) {
         Column(Modifier.padding(20.dp)) {
             Row(
@@ -267,7 +271,49 @@ private fun SeniorCard(senior: Senior) {
                     senior.gender
                 )
             }
+            
+            Spacer(Modifier.height(16.dp))
+            
+            // 二维码按钮
+            Button(
+                onClick = {
+                    // 生成二维码数据
+                    val qrData = """
+                        {
+                          "type": "pulselink_login",
+                          "id": "${senior.id}",
+                          "password": "${senior.password}"
+                        }
+                    """.trimIndent()
+                    
+                    // 生成二维码图片
+                    qrCodeBitmap = com.alvin.pulselink.util.QRCodeGenerator.generateQRCode(qrData)
+                    showQRCodeDialog = true
+                },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6)),
+                enabled = senior.password.isNotBlank()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.QrCodeScanner,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("查看登录二维码", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
+    }
+    
+    // 二维码对话框
+    if (showQRCodeDialog) {
+        QRCodeDialog(
+            seniorId = senior.id,
+            password = senior.password,
+            qrCodeBitmap = qrCodeBitmap,
+            onDismiss = { showQRCodeDialog = false }
+        )
     }
 }
 

@@ -61,6 +61,7 @@ fun LoginScreen(
     RoleThemeProvider(role = role) {
         val uiState by viewModel.uiState.collectAsStateWithLifecycle()
         val context = LocalContext.current
+        var showQRScanner by remember { mutableStateOf(false) }
         
         // 确定用户角色枚举
         val userRole = if (role == Role.SENIOR) UserRole.SENIOR else UserRole.CAREGIVER
@@ -95,9 +96,10 @@ fun LoginScreen(
             onEmailChange = viewModel::onEmailChange,
             onPasswordChange = viewModel::onPasswordChange,
             onTermsAgreementChange = viewModel::onTermsAgreementChange,
+            onScanQRCode = { showQRScanner = true },
             onLoginClick = {
                 if (userRole == UserRole.SENIOR) {
-                    viewModel.loginSeniorById()
+                    viewModel.loginSenior()  // 使用新的邮箱密码登录
                 } else {
                     viewModel.login(userRole)
                 }
@@ -107,6 +109,16 @@ fun LoginScreen(
             onForgotPasswordClick = onNavigateToForgotPassword,
             onResendVerification = viewModel::resendVerificationEmail
         )
+        
+        // 二维码扫描对话框
+        if (showQRScanner) {
+            QRCodeScannerDialog(
+                onDismiss = { showQRScanner = false },
+                onQRCodeScanned = { qrCode ->
+                    viewModel.parseQRCodeAndLogin(qrCode)
+                }
+            )
+        }
     }
 }
 
@@ -120,6 +132,7 @@ private fun LoginScreenContent(
     onEmailChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onTermsAgreementChange: (Boolean) -> Unit,
+    onScanQRCode: () -> Unit,
     onLoginClick: () -> Unit,
     onBackClick: () -> Unit,
     onRegisterClick: () -> Unit,
@@ -196,116 +209,140 @@ private fun LoginScreenContent(
             
             Spacer(modifier = Modifier.height(40.dp))
             
+            // 老人端和子女端都使用邮箱密码登录
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = if (userRole == UserRole.SENIOR) "账号ID" else stringResource(R.string.login_username_label),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = colors.textPrimary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                OutlinedTextField(
+                    value = if (userRole == UserRole.SENIOR) uiState.virtualId else uiState.email,
+                    onValueChange = if (userRole == UserRole.SENIOR) onVirtualIdChange else onEmailChange,
+                    placeholder = {
+                        Text(
+                            text = if (userRole == UserRole.SENIOR) 
+                                "SNR-XXXXXXXX" 
+                            else 
+                                stringResource(R.string.login_username_hint),
+                            color = colors.textHint
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = if (userRole == UserRole.SENIOR) KeyboardType.Ascii else KeyboardType.Email
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = colors.inputBackground.copy(alpha = 0.8f),
+                        focusedContainerColor = colors.inputBackground,
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedBorderColor = colors.inputFocusBorder,
+                        unfocusedTextColor = colors.inputText,
+                        focusedTextColor = colors.inputText
+                    ),
+                    singleLine = true
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(R.string.login_password_label),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = colors.textPrimary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                OutlinedTextField(
+                    value = uiState.password,
+                    onValueChange = onPasswordChange,
+                    placeholder = {
+                        Text(
+                            text = if (userRole == UserRole.SENIOR) "请输入密码" else stringResource(R.string.login_password_hint),
+                            color = colors.textHint
+                        )
+                    },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = colors.inputBackground.copy(alpha = 0.8f),
+                        focusedContainerColor = colors.inputBackground,
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedBorderColor = colors.inputFocusBorder,
+                        unfocusedTextColor = colors.inputText,
+                        focusedTextColor = colors.inputText
+                    ),
+                    singleLine = true
+                )
+            }
+            
+            // 老人端：显示扫码登录提示
             if (userRole == UserRole.SENIOR) {
-                // 老人端：仅显示虚拟ID输入
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = colors.textHint.copy(alpha = 0.3f)
+                    )
                     Text(
-                        text = stringResource(R.string.senior_virtual_id_label),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = colors.textPrimary,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        text = "或",
+                        fontSize = 14.sp,
+                        color = colors.textHint,
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     )
-                    OutlinedTextField(
-                        value = uiState.virtualId,
-                        onValueChange = onVirtualIdChange,
-                        placeholder = {
-                            Text(
-                                text = stringResource(R.string.senior_virtual_id_hint),
-                                color = colors.textHint
-                            )
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(60.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedContainerColor = colors.inputBackground.copy(alpha = 0.8f),
-                            focusedContainerColor = colors.inputBackground,
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = colors.inputFocusBorder,
-                            unfocusedTextColor = colors.inputText,
-                            focusedTextColor = colors.inputText
-                        ),
-                        singleLine = true
-                    )
-                }
-            } else {
-                // 子女端：邮箱 + 密码 + 忘记密码 + 条款
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = stringResource(R.string.login_username_label),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = colors.textPrimary,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    
-                    OutlinedTextField(
-                        value = uiState.email,
-                        onValueChange = onEmailChange,
-                        placeholder = {
-                            Text(
-                                text = stringResource(R.string.login_username_hint),
-                                color = colors.textHint
-                            )
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(60.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedContainerColor = colors.inputBackground.copy(alpha = 0.8f),
-                            focusedContainerColor = colors.inputBackground,
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = colors.inputFocusBorder,
-                            unfocusedTextColor = colors.inputText,
-                            focusedTextColor = colors.inputText
-                        ),
-                        singleLine = true
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = colors.textHint.copy(alpha = 0.3f)
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
                 
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = stringResource(R.string.login_password_label),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = colors.textPrimary,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                // 扫码登录按钮
+                OutlinedButton(
+                    onClick = onScanQRCode,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = colors.primary
+                    ),
+                    border = BorderStroke(2.dp, colors.primary)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,  // TODO: 使用二维码图标
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
                     )
-                    
-                    OutlinedTextField(
-                        value = uiState.password,
-                        onValueChange = onPasswordChange,
-                        placeholder = {
-                            Text(
-                                text = stringResource(R.string.login_password_hint),
-                                color = colors.textHint
-                            )
-                        },
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(60.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedContainerColor = colors.inputBackground.copy(alpha = 0.8f),
-                            focusedContainerColor = colors.inputBackground,
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = colors.inputFocusBorder,
-                            unfocusedTextColor = colors.inputText,
-                            focusedTextColor = colors.inputText
-                        ),
-                        singleLine = true
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "扫码登录",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
-                
+            }
+            
+            // 子女端：忘记密码和条款
+            if (userRole == UserRole.CAREGIVER) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End

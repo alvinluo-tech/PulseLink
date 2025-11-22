@@ -176,8 +176,180 @@ class AuthViewModel @Inject constructor(
     }
 
     /**
-     * 老人端登录：通过虚拟ID验证，无需邮箱与密码
+     * 老人端登录：通过虚拟ID和密码
+     * 
+     * 流程:
+     * 1. 输入虚拟ID（例如：SNR-ABCD1234）和密码
+     * 2. 自动拼接邮箱：senior_SNR-ABCD1234@pulselink.app
+     * 3. 调用标准的 Firebase Auth 邮箱登录
+     * 4. 验证角色是否为 SENIOR
      */
+    fun loginSenior() {
+        viewModelScope.launch {
+            val currentState = _uiState.value
+            
+            // 验证虚拟ID和密码
+            if (currentState.virtualId.isBlank() || currentState.password.isBlank()) {
+                _uiState.update {
+                    it.copy(
+                        error = "请输入账号ID和密码",
+                        virtualIdError = if (currentState.virtualId.isBlank()) "账号ID不能为空" else null,
+                        passwordError = if (currentState.password.isBlank()) "密码不能为空" else null
+                    )
+                }
+                return@launch
+            }
+            
+            // 验证虚拟ID格式
+            if (!currentState.virtualId.matches(Regex("^SNR-[A-Z0-9]{8}$"))) {
+                _uiState.update {
+                    it.copy(
+                        error = "ID格式不正确，应为 SNR-XXXXXXXX",
+                        virtualIdError = "ID格式不正确"
+                    )
+                }
+                return@launch
+            }
+
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            
+            // 自动拼接邮箱：senior_{虚拟ID}@pulselink.app
+            val email = "senior_${currentState.virtualId}@pulselink.app"
+            
+            // 执行登录（使用标准的邮箱密码登录）
+            val result = loginUseCase(
+                email = email,
+                password = currentState.password
+            )
+            
+            if (result.isSuccess) {
+                // 验证角色是否为 SENIOR
+                val user = authRepository.getCurrentUser()
+                if (user == null) {
+                    authRepository.logout()
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isSuccess = false,
+                            error = "获取用户信息失败，请重试"
+                        )
+                    }
+                    return@launch
+                }
+
+                if (user.role != UserRole.SENIOR) {
+                    // 角色不是老人，阻止登录
+                    authRepository.logout()
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isSuccess = false,
+                            error = "此账户不是老人账户，请使用正确的登录端"
+                        )
+                    }
+                    return@launch
+                }
+
+                // 登录成功
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        isSuccess = true,
+                        error = null
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        isSuccess = false,
+                        error = result.exceptionOrNull()?.message ?: "登录失败，请检查账号ID和密码"
+                    )
+                }
+            }
+        }
+    }
+    
+    /**
+     * 从二维码数据中解析登录信息
+     * 
+     * QR Code JSON 格式:
+     * {
+     *   "type": "pulselink_login",
+     *   "email": "senior_SNR-XXXXXXXX@pulselink.app",
+     *   "password": "xxxxxxxx"
+     * }
+     */
+    /**
+     * 解析二维码并自动登录
+     * 
+     * 支持格式：
+     * {
+     *   "type": "pulselink_login",
+     *   "id": "SNR-XXXXXXXX",
+     *   "password": "xxxxxxxx"
+     * }
+     */
+    fun parseQRCodeAndLogin(qrCodeData: String) {
+        try {
+            // 解析 ID 和密码（支持新格式）
+            val idPattern = """"id"\s*:\s*"([^"]+)"""".toRegex()
+            val passwordPattern = """"password"\s*:\s*"([^"]+)"""".toRegex()
+            
+            val idMatch = idPattern.find(qrCodeData)
+            val passwordMatch = passwordPattern.find(qrCodeData)
+            
+            if (idMatch != null && passwordMatch != null) {
+                val seniorId = idMatch.groupValues[1]
+                val password = passwordMatch.groupValues[1]
+                
+                // 更新状态并登录（使用 virtualId）
+                _uiState.update {
+                    it.copy(
+                        virtualId = seniorId,
+                        password = password
+                    )
+                }
+                
+                // 自动登录
+                loginSenior()
+            } else {
+                // 兼容旧格式（email 字段）
+                val emailPattern = """"email"\s*:\s*"([^"]+)"""".toRegex()
+                val emailMatch = emailPattern.find(qrCodeData)
+                
+                if (emailMatch != null && passwordMatch != null) {
+                    val email = emailMatch.groupValues[1]
+                    val password = passwordMatch.groupValues[1]
+                    
+                    // 从邮箱中提取 ID（格式：senior_SNR-XXXXXXXX@pulselink.app）
+                    val extractedId = email.substringAfter("senior_").substringBefore("@")
+                    
+                    _uiState.update {
+                        it.copy(
+                            virtualId = extractedId,
+                            password = password
+                        )
+                    }
+                    
+                    loginSenior()
+                } else {
+                    _uiState.update {
+                        it.copy(error = "二维码格式不正确")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            _uiState.update {
+                it.copy(error = "解析二维码失败: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 老人端登录：通过虚拟ID验证（已弃用，保留用于兼容）
+     */
+    @Deprecated("Use loginSenior() with email/password instead")
     fun loginSeniorById() {
         viewModelScope.launch {
             val id = _uiState.value.virtualId

@@ -77,6 +77,17 @@ dependencies {
     
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    
+    // QR Code Generation
+    implementation("com.google.zxing:core:3.5.3")
+    
+    // QR Code Scanning (Google ML Kit Barcode Scanning)
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    
+    // CameraX for QR code scanning
+    implementation("androidx.camera:camera-camera2:1.3.1")
+    implementation("androidx.camera:camera-lifecycle:1.3.1")
+    implementation("androidx.camera:camera-view:1.3.1")
 
     // --- Firebase 核心配置 (BOM) ---
     // 使用 BOM 后，下面的库都不需要写版本号

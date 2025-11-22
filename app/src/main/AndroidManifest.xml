@@ -4,6 +4,13 @@
 
     <!-- Allow network access for Firebase / Recaptcha / API calls -->
     <uses-permission android:name="android.permission.INTERNET" />
+    
+    <!-- Camera permission for QR code scanning -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    
+    <!-- Optional: Camera feature (not required, for better Play Store filtering) -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <application
         android:name=".PulseLinkApplication"

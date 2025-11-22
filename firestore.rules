@@ -48,7 +48,7 @@ service cloud.firestore {
                     && (request.auth.uid in request.resource.data.caregiverIds)
                     && request.resource.data.caregiverIds.size() >= 1
                     && request.resource.data.keys().hasOnly([
-                      'id','name','age','gender','healthHistory','caregiverIds','creatorId','createdAt'
+                      'id','name','age','gender','healthHistory','caregiverIds','creatorId','createdAt','password'
                     ])
                     && request.resource.data.id is string
                     && request.resource.data.name is string
@@ -56,7 +56,8 @@ service cloud.firestore {
                     && request.resource.data.gender is string
                     && request.resource.data.healthHistory is map
                     && request.resource.data.caregiverIds is list
-                    && request.resource.data.createdAt is int;
+                    && request.resource.data.createdAt is int
+                    && request.resource.data.password is string;
 
       // 读取：创建者、已绑定的护理者、或老人自己（通过 seniorId 匹配）可读
       allow read: if isCreator() || isCaregiverBound() || isSeniorSelf();

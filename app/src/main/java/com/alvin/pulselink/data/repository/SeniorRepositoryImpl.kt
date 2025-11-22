@@ -36,6 +36,7 @@ class SeniorRepositoryImpl @Inject constructor(
                 "caregiverIds" to caregiverIds,
                 "creatorId" to creatorId,
                 "createdAt" to senior.createdAt,
+                "password" to senior.password, // 存储密码（用于生成二维码）
                 "healthHistory" to hashMapOf(
                     "bloodPressure" to senior.healthHistory.bloodPressure?.let {
                         hashMapOf(
@@ -79,6 +80,7 @@ class SeniorRepositoryImpl @Inject constructor(
                         caregiverIds = (doc.get("caregiverIds") as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
                         creatorId = doc.getString("creatorId") ?: "",
                         createdAt = doc.getLong("createdAt") ?: 0L,
+                        password = doc.getString("password") ?: "", // 读取密码
                         healthHistory = HealthHistory(
                             bloodPressure = bloodPressureMap?.let {
                                 BloodPressureRecord(
@@ -128,6 +130,7 @@ class SeniorRepositoryImpl @Inject constructor(
                         caregiverIds = (doc.get("caregiverIds") as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
                         creatorId = doc.getString("creatorId") ?: "",
                         createdAt = doc.getLong("createdAt") ?: 0L,
+                        password = doc.getString("password") ?: "", // 读取密码
                         healthHistory = HealthHistory(
                             bloodPressure = bloodPressureMap?.let {
                                 BloodPressureRecord(
@@ -176,6 +179,7 @@ class SeniorRepositoryImpl @Inject constructor(
                 caregiverIds = (doc.get("caregiverIds") as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
                 creatorId = doc.getString("creatorId") ?: "",
                 createdAt = doc.getLong("createdAt") ?: 0L,
+                password = doc.getString("password") ?: "", // 读取密码
                 healthHistory = HealthHistory(
                     bloodPressure = bloodPressureMap?.let {
                         BloodPressureRecord(
@@ -208,6 +212,7 @@ class SeniorRepositoryImpl @Inject constructor(
                 "age" to senior.age,
                 "gender" to senior.gender,
                 "caregiverIds" to senior.caregiverIds,
+                "password" to senior.password, // 更新密码
                 "healthHistory" to hashMapOf(
                     "bloodPressure" to senior.healthHistory.bloodPressure?.let {
                         hashMapOf(
