@@ -1,14 +1,18 @@
 package com.alvin.pulselink.presentation.caregiver.senior
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.domain.model.BloodPressureRecord
+import com.alvin.pulselink.domain.model.CaregiverRelationship
 import com.alvin.pulselink.domain.model.HealthHistory
 import com.alvin.pulselink.domain.model.Senior
 import com.alvin.pulselink.domain.repository.AuthRepository
+import com.alvin.pulselink.domain.repository.LinkRequestRepository
 import com.alvin.pulselink.domain.repository.SeniorRepository
 import com.alvin.pulselink.domain.usecase.CreateSeniorUseCase
 import com.alvin.pulselink.util.QRCodeGenerator
+import com.alvin.pulselink.util.AvatarHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +27,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ManageSeniorsViewModel @Inject constructor(
     private val seniorRepository: SeniorRepository,
+    private val linkRequestRepository: LinkRequestRepository,
     private val createSeniorUseCase: CreateSeniorUseCase,
     private val authRepository: AuthRepository
 ) : ViewModel() {
@@ -42,31 +47,85 @@ class ManageSeniorsViewModel @Inject constructor(
             _manageSeniorsState.update { it.copy(isLoading = true, errorMessage = null, successMessage = null) }
 
             val caregiverId = authRepository.getCurrentUid() ?: ""
+            Log.d("ManageSeniorsVM", "Loading seniors for caregiver: $caregiverId")
 
-            // 获取所有绑定的（包含创建者）
-            seniorRepository.getSeniorsByCaregiver(caregiverId)
-                .onSuccess { allSeniors ->
+            try {
+                // 1. 获取在caregiverIds中的老人（已批准的active状态）
+                val activeSeniorsResult = seniorRepository.getSeniorsByCaregiver(caregiverId)
+                Log.d("ManageSeniorsVM", "Active seniors result: ${activeSeniorsResult.isSuccess}")
+                
+                // 2. 获取自己创建的所有老人
+                val createdSeniorsResult = seniorRepository.getSeniorsByCreator(caregiverId)
+                Log.d("ManageSeniorsVM", "Created seniors result: ${createdSeniorsResult.isSuccess}")
+                
+                // 3. 获取用户发出的pending请求
+                val pendingRequestsResult = linkRequestRepository.getRequestsByRequester(caregiverId)
+                Log.d("ManageSeniorsVM", "Pending requests result: ${pendingRequestsResult.isSuccess}")
+                
+                if (activeSeniorsResult.isSuccess && createdSeniorsResult.isSuccess && pendingRequestsResult.isSuccess) {
+                    val activeSeniors = activeSeniorsResult.getOrNull() ?: emptyList()
+                    val createdSeniors = createdSeniorsResult.getOrNull() ?: emptyList()
+                    val pendingRequests = pendingRequestsResult.getOrNull() ?: emptyList()
+                    
+                    Log.d("ManageSeniorsVM", "Active count: ${activeSeniors.size}")
+                    Log.d("ManageSeniorsVM", "Created count: ${createdSeniors.size}")
+                    Log.d("ManageSeniorsVM", "Pending requests count: ${pendingRequests.size}")
+                    
+                    // 对于pending请求，需要获取对应的Senior信息
+                    val pendingSeniors = mutableListOf<Senior>()
+                    val pendingRequestsMap = mutableMapOf<String, com.alvin.pulselink.domain.model.LinkRequest>()
+                    pendingRequests.filter { it.status == "pending" }.forEach { request ->
+                        seniorRepository.getSeniorById(request.seniorId)
+                            .onSuccess { senior ->
+                                pendingSeniors.add(senior)
+                                pendingRequestsMap[senior.id] = request
+                            }
+                            .onFailure { error ->
+                                Log.e("ManageSeniorsVM", "Failed to load senior ${request.seniorId}: ${error.message}")
+                            }
+                    }
+                    
+                    // 合并所有列表，去重（使用ID）
+                    val allSeniors = (activeSeniors + createdSeniors + pendingSeniors).distinctBy { it.id }
+                    Log.d("ManageSeniorsVM", "Total unique seniors: ${allSeniors.size}")
+                    
                     val created = allSeniors.filter { it.creatorId == caregiverId }
                     val linkedOnly = allSeniors.filter { it.creatorId != caregiverId }
+                    
+                    Log.d("ManageSeniorsVM", "Final - Created: ${created.size}, Linked: ${linkedOnly.size}")
 
                     _manageSeniorsState.update {
                         it.copy(
                             createdSeniors = created,
                             linkedSeniors = linkedOnly,
+                            pendingRequestsMap = pendingRequestsMap,
                             isLoading = false,
                             currentUserId = caregiverId
                         )
                     }
-                }
-                .onFailure { error ->
+                } else {
+                    val error = activeSeniorsResult.exceptionOrNull() 
+                        ?: createdSeniorsResult.exceptionOrNull() 
+                        ?: pendingRequestsResult.exceptionOrNull()
+                    Log.e("ManageSeniorsVM", "Failed to load seniors: ${error?.message}", error)
                     _manageSeniorsState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = error.message ?: "Failed to load seniors",
+                            errorMessage = error?.message ?: "Failed to load seniors",
                             currentUserId = caregiverId
                         )
                     }
                 }
+            } catch (e: Exception) {
+                Log.e("ManageSeniorsVM", "Exception loading seniors: ${e.message}", e)
+                _manageSeniorsState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = e.message ?: "Failed to load seniors",
+                        currentUserId = caregiverId
+                    )
+                }
+            }
         }
     }
 
@@ -81,6 +140,14 @@ class ManageSeniorsViewModel @Inject constructor(
 
     fun onGenderChanged(gender: String) {
         _createSeniorState.update { it.copy(gender = gender) }
+    }
+    
+    fun onRelationshipChanged(relationship: String) {
+        _createSeniorState.update { it.copy(relationship = relationship, relationshipError = null) }
+    }
+
+    fun onNicknameChanged(nickname: String) {
+        _createSeniorState.update { it.copy(nickname = nickname) }
     }
 
     fun onSystolicBPChanged(value: String) {
@@ -128,12 +195,20 @@ class ManageSeniorsViewModel @Inject constructor(
             hasError = true
         }
         
+        if (state.relationship.isBlank()) {
+            _createSeniorState.update { it.copy(relationshipError = "Relationship is required") }
+            hasError = true
+        }
+        
         if (hasError) return
         
         viewModelScope.launch {
             _createSeniorState.update { it.copy(isLoading = true, errorMessage = null) }
             
             val caregiverId = authRepository.getCurrentUid() ?: ""
+            
+            // 根据年龄和性别自动选择头像类型
+            val avatarType = AvatarHelper.getAvatarType(ageInt!!, state.gender)
             
             // Parse blood pressure
             val bloodPressure = if (state.systolicBP.isNotBlank() && state.diastolicBP.isNotBlank()) {
@@ -163,9 +238,18 @@ class ManageSeniorsViewModel @Inject constructor(
             
             val senior = Senior(
                 name = state.name,
-                age = ageInt!!,
+                age = ageInt,
                 gender = state.gender,
+                avatarType = avatarType,
                 caregiverIds = listOf(caregiverId),
+                caregiverRelationships = mapOf(
+                    caregiverId to CaregiverRelationship(
+                        relationship = state.relationship,
+                        nickname = state.nickname,
+                        linkedAt = System.currentTimeMillis(),
+                        status = "active"
+                    )
+                ),
                 creatorId = caregiverId,
                 healthHistory = HealthHistory(
                     bloodPressure = bloodPressure,
@@ -234,14 +318,22 @@ class ManageSeniorsViewModel @Inject constructor(
     fun loadSeniorForEdit(seniorId: String) {
         viewModelScope.launch {
             _createSeniorState.update { it.copy(isLoading = true, errorMessage = null) }
+            
+            val currentUid = authRepository.getCurrentUid() ?: ""
+            
             seniorRepository.getSeniorById(seniorId)
                 .onSuccess { senior ->
+                    // 获取当前用户的关系信息
+                    val userRelationship = senior.caregiverRelationships[currentUid]
+                    
                     _createSeniorState.update {
                         it.copy(
                             isLoading = false,
                             name = senior.name,
                             age = senior.age.toString(),
                             gender = senior.gender,
+                            relationship = userRelationship?.relationship ?: "",
+                            nickname = userRelationship?.nickname ?: "",
                             systolicBP = senior.healthHistory.bloodPressure?.systolic?.toString() ?: "",
                             diastolicBP = senior.healthHistory.bloodPressure?.diastolic?.toString() ?: "",
                             heartRate = senior.healthHistory.heartRate?.toString() ?: "",
@@ -299,10 +391,24 @@ class ManageSeniorsViewModel @Inject constructor(
                     val medications = state.medications.split(",").map { it.trim() }.filter { it.isNotBlank() }
                     val allergies = state.allergies.split(",").map { it.trim() }.filter { it.isNotBlank() }
 
+                    // 重新计算头像类型（如果年龄或性别改变）
+                    val avatarType = AvatarHelper.getAvatarType(ageInt!!, state.gender)
+
+                    // 更新当前用户的关系信息
+                    val updatedRelationships = original.caregiverRelationships.toMutableMap()
+                    updatedRelationships[currentUid] = CaregiverRelationship(
+                        relationship = state.relationship,
+                        nickname = state.nickname,
+                        linkedAt = original.caregiverRelationships[currentUid]?.linkedAt ?: System.currentTimeMillis(),
+                        status = "active"
+                    )
+
                     val updated = original.copy(
                         name = state.name,
-                        age = ageInt!!,
+                        age = ageInt,
                         gender = state.gender,
+                        avatarType = avatarType,
+                        caregiverRelationships = updatedRelationships,
                         healthHistory = HealthHistory(
                             bloodPressure = bloodPressure,
                             heartRate = state.heartRate.toIntOrNull(),

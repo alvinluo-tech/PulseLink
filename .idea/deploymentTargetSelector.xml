@@ -4,7 +4,7 @@
     <selectionStates>
       <SelectionState runConfigName="app senior">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-11-22T13:39:14.933105600Z">
+        <DropdownSelection timestamp="2025-11-23T18:39:19.062502700Z">
           <Target type="DEFAULT_BOOT">
             <handle>
               <DeviceId pluginId="LocalEmulator" identifier="path=D:\software\programing\Android\avd\Pixel_9_Pro_XL.avd" />
@@ -15,7 +15,7 @@
       </SelectionState>
       <SelectionState runConfigName="app caregiver">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-11-22T07:56:36.332311600Z">
+        <DropdownSelection timestamp="2025-11-23T21:02:36.219967800Z">
           <Target type="DEFAULT_BOOT">
             <handle>
               <DeviceId pluginId="LocalEmulator" identifier="path=D:\software\programing\Android\avd\Pixel_9_Pro_XL_2.avd" />

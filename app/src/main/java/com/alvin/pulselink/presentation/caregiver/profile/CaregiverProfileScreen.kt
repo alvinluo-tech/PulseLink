@@ -17,9 +17,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alvin.pulselink.presentation.caregiver.dashboard.CareNavigationBar
 
@@ -33,11 +36,26 @@ fun CaregiverProfileScreen(
     onNavigateToManageSeniors: () -> Unit,
     onNavigateToCreateSenior: () -> Unit,
     onNavigateToManageFamily: () -> Unit,
+    onNavigateToLinkGuard: () -> Unit,
     onNavigateToPrivacySecurity: () -> Unit,
     onNavigateToHelpCenter: () -> Unit,
     onLogout: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    
+    // 监听生命周期，当从其他页面返回时刷新待审批数量
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshPendingRequestsCount()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
     
     Scaffold(
         bottomBar = {
@@ -211,6 +229,15 @@ fun CaregiverProfileScreen(
                 )
                 
                 ProfileMenuItem(
+                    icon = Icons.Default.VerifiedUser,
+                    title = "Link Guard",
+                    subtitle = if (uiState.pendingRequestsCount > 0) "${ uiState.pendingRequestsCount} pending requests" else null,
+                    showBadge = uiState.pendingRequestsCount > 0,
+                    badgeCount = uiState.pendingRequestsCount,
+                    onClick = onNavigateToLinkGuard
+                )
+                
+                ProfileMenuItem(
                     icon = Icons.Default.Security,
                     title = "Privacy & Security",
                     onClick = onNavigateToPrivacySecurity
@@ -304,6 +331,9 @@ private fun OverviewItem(
 private fun ProfileMenuItem(
     icon: ImageVector,
     title: String,
+    subtitle: String? = null,
+    showBadge: Boolean = false,
+    badgeCount: Int = 0,
     onClick: () -> Unit
 ) {
     Card(
@@ -322,20 +352,46 @@ private fun ProfileMenuItem(
                 .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = Color(0xFF6B7280),
-                modifier = Modifier.size(24.dp)
-            )
+            Box {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = Color(0xFF6B7280),
+                    modifier = Modifier.size(24.dp)
+                )
+                if (showBadge && badgeCount > 0) {
+                    Badge(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 8.dp, y = (-8).dp)
+                    ) {
+                        Text(
+                            text = if (badgeCount > 9) "9+" else badgeCount.toString(),
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+            
             Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text = title,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF2C3E50),
-                modifier = Modifier.weight(1f)
-            )
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF2C3E50)
+                )
+                if (subtitle != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = subtitle,
+                        fontSize = 13.sp,
+                        color = Color(0xFF8B5CF6)
+                    )
+                }
+            }
+            
             Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = "Navigate",

@@ -164,6 +164,89 @@ export const createSeniorAccount = onCall(
 );
 
 /**
+ * 删除老人账户的 Cloud Function
+ * 
+ * 调用参数:
+ * - seniorId: 老人的虚拟ID (例如: SNR-ABCD1234)
+ * 
+ * 返回:
+ * - success: boolean
+ * - message: 删除结果消息
+ */
+export const deleteSeniorAccount = onCall(
+    {
+        timeoutSeconds: 30,
+        memory: "256MiB"
+    },
+    async (request) => {
+        // --- 鉴权检查：只有已登录的 caregiver 可以删除 ---
+        if (!request.auth) {
+            throw new HttpsError("unauthenticated", "请先登录");
+        }
+
+        // --- 获取参数 ---
+        const { seniorId } = request.data;
+
+        // --- 参数验证 ---
+        if (!seniorId || typeof seniorId !== "string") {
+            throw new HttpsError("invalid-argument", "seniorId 是必需的");
+        }
+
+        try {
+            console.log(`Deleting senior account: ${seniorId}`);
+
+            // --- 1. 根据 seniorId 查找对应的 Firebase Auth UID ---
+            const email = `senior_${seniorId}@pulselink.app`;
+            
+            let userRecord;
+            try {
+                userRecord = await admin.auth().getUserByEmail(email);
+            } catch (error: any) {
+                if (error.code === "auth/user-not-found") {
+                    console.log(`Firebase Auth user not found for ${seniorId}, continuing with Firestore deletion`);
+                    // 即使 Auth 用户不存在，也继续删除 Firestore 数据
+                    return {
+                        success: true,
+                        message: "Senior account deleted (Auth user not found)",
+                        deletedAuth: false,
+                        deletedFirestore: false
+                    };
+                }
+                throw error;
+            }
+
+            const uid = userRecord.uid;
+            console.log(`Found UID: ${uid} for seniorId: ${seniorId}`);
+
+            // --- 2. 删除 Firestore 中的 user 文档 ---
+            await admin.firestore().collection("users").doc(uid).delete();
+            console.log(`Deleted Firestore user document: ${uid}`);
+
+            // --- 3. 删除 Firebase Auth 账户 ---
+            await admin.auth().deleteUser(uid);
+            console.log(`Deleted Firebase Auth user: ${uid}`);
+
+            // --- 返回结果 ---
+            return {
+                success: true,
+                message: "Senior account deleted successfully",
+                deletedAuth: true,
+                deletedFirestore: true,
+                uid: uid
+            };
+
+        } catch (error: any) {
+            console.error("Delete senior account error:", error);
+            
+            throw new HttpsError(
+                "internal", 
+                `删除账户失败: ${error.message}`
+            );
+        }
+    }
+);
+
+/**
  * 生成 8 位随机密码
  */
 function generateRandomPassword(): string {

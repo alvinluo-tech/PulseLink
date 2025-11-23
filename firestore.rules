@@ -2,10 +2,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // 用户文档 - 只能在登录后创建和访问
+    // 用户文档 - 已登录用户可以读取任何用户的基本信息（用于显示名字、邮箱等）
+    // 但只能修改自己的数据
     match /users/{userId} {
-      // 允许已登录用户读写自己的数据
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // 允许所有已登录用户读取用户信息（用于审批流程、显示请求者信息等）
+      allow read: if request.auth != null;
+      // 只允许用户修改自己的数据
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
     
     // 测试日志 - 允许所有读写（仅用于开发测试）
@@ -48,14 +51,17 @@ service cloud.firestore {
                     && (request.auth.uid in request.resource.data.caregiverIds)
                     && request.resource.data.caregiverIds.size() >= 1
                     && request.resource.data.keys().hasOnly([
-                      'id','name','age','gender','healthHistory','caregiverIds','creatorId','createdAt','password'
+                      'id','name','age','gender','avatarType','healthHistory','caregiverIds','pendingCaregiversIds','caregiverRelationships','creatorId','createdAt','password'
                     ])
                     && request.resource.data.id is string
                     && request.resource.data.name is string
                     && request.resource.data.age is int
                     && request.resource.data.gender is string
+                    && request.resource.data.avatarType is string
                     && request.resource.data.healthHistory is map
                     && request.resource.data.caregiverIds is list
+                    && request.resource.data.pendingCaregiversIds is list
+                    && request.resource.data.caregiverRelationships is map
                     && request.resource.data.createdAt is int
                     && request.resource.data.password is string;
 
@@ -66,19 +72,55 @@ service cloud.firestore {
       allow delete: if isCreator();
 
       // 更新：
-      // 1) 创建者可更新任意字段；
-      // 2) 未绑定的护理者只允许自我绑定（仅新增自身到 caregiverIds，且不更改 creatorId/其他字段）
-      allow update: if isCreator()
+      // 1) 创建者可更新任意字段（包括审批链接请求：修改 caregiverRelationships status 和 caregiverIds）
+      // 2) 未绑定的护理者可以发送链接请求（仅添加自身到 caregiverRelationships，status="pending"，不添加到 caregiverIds）
+      // 3) 已绑定的护理者可以更新自己的 relationship 信息
+      allow update: if isCreator() // 创建者有完全控制权（审批、拒绝请求）
                     || (
+                      // 护理者发送链接请求（添加 pending 关系）
                       isAuthenticated()
                       && !(request.auth.uid in resource.data.caregiverIds) // 之前未绑定
-                      && (request.auth.uid in request.resource.data.caregiverIds) // 新数据包含自身
-                      && request.resource.data.caregiverIds.size() == resource.data.caregiverIds.size() + 1 // 只新增一个
+                      && !(request.auth.uid in request.resource.data.caregiverIds) // 新数据也不包含（pending 状态）
                       && request.resource.data.creatorId == resource.data.creatorId // 不改创建者
-                      && request.resource.data.diff(resource.data).changedKeys().hasOnly(['caregiverIds']) // 仅更改 caregiverIds
-                      && request.resource.data.caregiverIds.hasAll(resource.data.caregiverIds) // 保留已有绑定
+                      && request.resource.data.diff(resource.data).changedKeys().hasOnly(['caregiverRelationships']) // 仅更改 caregiverRelationships
+                      && request.resource.data.caregiverIds == resource.data.caregiverIds // caregiverIds 不变
                     )
-                    || isCaregiverBound(); // 已绑定护理者可作有限更新（如备注字段，若未来加入）
+                    || isCaregiverBound(); // 已绑定护理者可作有限更新（包括自己的 relationship 信息）
+    }
+    
+    // Link Requests Collection - 独立的链接请求集合
+    match /linkRequests/{requestId} {
+      function isAuthenticated() {
+        return request.auth != null;
+      }
+      
+      function isRequester() {
+        return isAuthenticated() && resource.data.requesterId == request.auth.uid;
+      }
+      
+      function isCreator() {
+        return isAuthenticated() && resource.data.creatorId == request.auth.uid;
+      }
+      
+      // 创建：任何已认证用户可以创建链接请求
+      allow create: if isAuthenticated()
+                    && request.resource.data.requesterId == request.auth.uid
+                    && request.resource.data.keys().hasOnly([
+                      'id','seniorId','requesterId','creatorId','relationship','nickname','message','status','createdAt','updatedAt'
+                    ])
+                    && request.resource.data.status == 'pending';
+      
+      // 读取：请求者和创建者都可以读取
+      allow read: if isRequester() || isCreator();
+      
+      // 更新：创建者可以更新状态（批准/拒绝），请求者不能更新
+      allow update: if isCreator()
+                    && request.resource.data.requesterId == resource.data.requesterId
+                    && request.resource.data.seniorId == resource.data.seniorId
+                    && request.resource.data.creatorId == resource.data.creatorId;
+      
+      // 删除：创建者和请求者都可以删除
+      allow delete: if isRequester() || isCreator();
     }
   }
 }

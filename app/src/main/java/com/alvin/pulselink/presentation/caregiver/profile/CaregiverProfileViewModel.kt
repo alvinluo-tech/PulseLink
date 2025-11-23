@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.data.local.LocalDataSource
 import com.alvin.pulselink.domain.repository.AuthRepository
+import com.alvin.pulselink.domain.repository.SeniorRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,12 +20,14 @@ data class CaregiverProfileUiState(
     val attentionCount: Int = 1,
     val urgentCount: Int = 1,
     val activeAlertsCount: Int = 2,
+    val pendingRequestsCount: Int = 0,
     val isLoading: Boolean = false
 )
 
 @HiltViewModel
 class CaregiverProfileViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val seniorRepository: SeniorRepository,
     private val localDataSource: LocalDataSource
 ) : ViewModel() {
     
@@ -52,6 +55,53 @@ class CaregiverProfileViewModel @Inject constructor(
             
             // 2️⃣ 后台静默同步 Firestore (检查更新)
             syncFromFirestore()
+            
+            // 3️⃣ 加载待审批请求数量
+            loadPendingRequestsCount()
+        }
+    }
+    
+    /**
+     * 加载待审批的 Link 请求数量
+     */
+    private suspend fun loadPendingRequestsCount() {
+        try {
+            val currentUser = authRepository.getCurrentUser()
+            if (currentUser != null) {
+                val result = seniorRepository.getPendingLinkRequests(currentUser.id)
+                result.fold(
+                    onSuccess = { seniors ->
+                        // 计算所有 pending 关系的总数
+                        val pendingCount = seniors.sumOf { senior ->
+                            senior.caregiverRelationships.count { it.value.status == "pending" }
+                        }
+                        
+                        _uiState.update { 
+                            it.copy(pendingRequestsCount = pendingCount)
+                        }
+                    },
+                    onFailure = {
+                        // 失败时保持默认值 0
+                        _uiState.update { 
+                            it.copy(pendingRequestsCount = 0)
+                        }
+                    }
+                )
+            }
+        } catch (e: Exception) {
+            // 异常时保持默认值 0
+            _uiState.update { 
+                it.copy(pendingRequestsCount = 0)
+            }
+        }
+    }
+    
+    /**
+     * 刷新待审批请求数量（供外部调用，例如从 FamilyRequestsScreen 返回后）
+     */
+    fun refreshPendingRequestsCount() {
+        viewModelScope.launch {
+            loadPendingRequestsCount()
         }
     }
     

@@ -1,6 +1,7 @@
 package com.alvin.pulselink.presentation.caregiver.senior
 
 import android.graphics.Bitmap
+import com.alvin.pulselink.domain.model.LinkRequest
 import com.alvin.pulselink.domain.model.Senior
 
 /**
@@ -9,6 +10,7 @@ import com.alvin.pulselink.domain.model.Senior
 data class ManageSeniorsUiState(
     val createdSeniors: List<Senior> = emptyList(),
     val linkedSeniors: List<Senior> = emptyList(),
+    val pendingRequestsMap: Map<String, LinkRequest> = emptyMap(), // seniorId -> LinkRequest
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val successMessage: String? = null,
@@ -23,6 +25,8 @@ data class CreateSeniorUiState(
     val name: String = "",
     val age: String = "",
     val gender: String = "Male",
+    val relationship: String = "",
+    val nickname: String = "", // 对老人的称呼（可选）
     
     // 健康历史
     val systolicBP: String = "",
@@ -36,6 +40,7 @@ data class CreateSeniorUiState(
     // 错误信息
     val nameError: String? = null,
     val ageError: String? = null,
+    val relationshipError: String? = null,
     val bpError: String? = null,
     
     // 加载状态

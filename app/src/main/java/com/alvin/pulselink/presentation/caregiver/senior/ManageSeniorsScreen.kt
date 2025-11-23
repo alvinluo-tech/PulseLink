@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -110,9 +111,11 @@ fun ManageSeniorsScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             items(list) { senior ->
+                                val pendingRequest = manageSeniorsState.pendingRequestsMap[senior.id]
                                 SeniorCard(
                                     senior = senior,
                                     currentUserId = manageSeniorsState.currentUserId,
+                                    pendingRequest = pendingRequest,
                                     onEdit = { onEditSenior(it) },
                                     onUnlink = { viewModel.unlinkSenior(it) },
                                     onDelete = { viewModel.deleteSenior(it) }
@@ -152,13 +155,13 @@ private fun EmptyState() {
         )
 
         Spacer(modifier = Modifier.height(8.dp))
-        Spacer(modifier = Modifier.height(32.dp))
 
         Text(
-            text = "请使用“创建老人账户”功能添加新账户",
+            text = "Create a new senior account or link to an existing one to get started",
             fontSize = 14.sp,
             color = Color(0xFF6B7280),
-            modifier = Modifier.padding(horizontal = 16.dp)
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 32.dp)
         )
     }
 }
@@ -167,11 +170,14 @@ private fun EmptyState() {
 private fun SeniorCard(
     senior: Senior,
     currentUserId: String,
+    pendingRequest: com.alvin.pulselink.domain.model.LinkRequest?,
     onEdit: (String) -> Unit,
     onUnlink: (String) -> Unit,
     onDelete: (String) -> Unit
 ) {
     val isCreator = senior.creatorId == currentUserId
+    // 检查是否是pending状态
+    val isPending = pendingRequest != null && pendingRequest.status == "pending"
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -200,17 +206,35 @@ private fun SeniorCard(
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (isCreator) Color(0xFFDCFCE7) else Color(0xFFDEEDFF)
-                        ) {
-                            Text(
-                                text = if (isCreator) "Created" else "Linked",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (isCreator) Color(0xFF16A34A) else Color(0xFF2563EB),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
+                        // 显示状态标签
+                        if (isPending) {
+                            // Pending状态标签
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFFFEF3C7)
+                            ) {
+                                Text(
+                                    text = "Pending Approval",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFFD97706),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        } else {
+                            // Created/Linked状态标签
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isCreator) Color(0xFFDCFCE7) else Color(0xFFDEEDFF)
+                            ) {
+                                Text(
+                                    text = if (isCreator) "Created" else "Linked",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isCreator) Color(0xFF16A34A) else Color(0xFF2563EB),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -273,6 +297,34 @@ private fun SeniorCard(
                 fontSize = 12.sp,
                 color = Color(0xFF9CA3AF)
             )
+            
+            // 显示pending状态的提示信息
+            if (isPending) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFFFFBEB),
+                    border = BorderStroke(1.dp, Color(0xFFFBBF24))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = null,
+                            tint = Color(0xFFD97706),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Your link request is awaiting approval from the account creator.",
+                            fontSize = 13.sp,
+                            color = Color(0xFF92400E)
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -302,6 +354,14 @@ private fun SeniorCard(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Delete Account")
                     }
+                } else if (isPending) {
+                    // Pending状态下不显示操作按钮
+                    Text(
+                        text = "Waiting for approval",
+                        fontSize = 14.sp,
+                        color = Color(0xFF9CA3AF),
+                        fontWeight = FontWeight.Medium
+                    )
                 } else {
                     OutlinedButton(
                         onClick = { onUnlink(senior.id) },

@@ -25,6 +25,9 @@ interface AuthRepository {
     // 获取当前用户信息
     suspend fun getCurrentUser(): User?
     
+    // 根据用户ID获取用户信息
+    suspend fun getUserById(userId: String): Result<User>
+    
     // 登出
     suspend fun logout()
     

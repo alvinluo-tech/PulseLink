@@ -188,6 +188,8 @@ class AuthRepositoryImpl @Inject constructor(
             if (document.exists()) {
                 User(
                     id = uid,
+                    email = document.getString("email") ?: firebaseUser.email ?: "",
+                    name = document.getString("username") ?: "",
                     username = document.getString("username") ?: "",
                     role = UserRole.valueOf(document.getString("role") ?: "SENIOR")
                 )
@@ -197,12 +199,52 @@ class AuthRepositoryImpl @Inject constructor(
                 val parts = displayName.split("|")
                 User(
                     id = uid,
+                    email = firebaseUser.email ?: "",
+                    name = parts.getOrNull(0) ?: "User",
                     username = parts.getOrNull(0) ?: "User",
                     role = UserRole.valueOf(parts.getOrNull(1) ?: "SENIOR")
                 )
             }
         } catch (e: Exception) {
             null
+        }
+    }
+    
+    /**
+     * 根据用户ID获取用户信息
+     */
+    override suspend fun getUserById(userId: String): Result<User> {
+        return try {
+            android.util.Log.d("AuthRepository", "Getting user by ID: $userId")
+            val document = firestore.collection("users")
+                .document(userId)
+                .get()
+                .await()
+            
+            android.util.Log.d("AuthRepository", "Document exists: ${document.exists()}")
+            
+            if (document.exists()) {
+                val email = document.getString("email") ?: ""
+                val username = document.getString("username") ?: ""
+                val role = document.getString("role") ?: "SENIOR"
+                
+                android.util.Log.d("AuthRepository", "User data - email: $email, username: $username, role: $role")
+                
+                val user = User(
+                    id = userId,
+                    email = email,
+                    name = username,
+                    username = username,
+                    role = UserRole.valueOf(role)
+                )
+                Result.success(user)
+            } else {
+                android.util.Log.e("AuthRepository", "User document not found for ID: $userId")
+                Result.failure(Exception("User not found"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AuthRepository", "Error getting user by ID: ${e.message}", e)
+            Result.failure(e)
         }
     }
     

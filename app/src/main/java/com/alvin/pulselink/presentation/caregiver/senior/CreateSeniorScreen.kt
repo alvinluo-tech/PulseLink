@@ -3,6 +3,8 @@ package com.alvin.pulselink.presentation.caregiver.senior
 import android.graphics.Bitmap
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -29,12 +31,14 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alvin.pulselink.domain.model.Senior
+import com.alvin.pulselink.util.AvatarHelper
+import com.alvin.pulselink.util.RelationshipHelper
 import kotlinx.coroutines.launch
 
 /**
- * 创建老人账户页面
- * - 空状态：显示引导按钮
- * - 有数据：显示列表 + FAB
+ * Create Senior Account Screen
+ * - Empty state: Show guide button
+ * - With data: Show list + FAB
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,25 +51,25 @@ fun CreateSeniorScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var showCreateForm by remember { mutableStateOf(false) }
 
-    // 获取已创建的老人（使用 manageSeniorsState 中的 createdSeniors）
+    // Get created seniors (using createdSeniors from manageSeniorsState)
     val createdSeniors = manageState.createdSeniors
 
-    // 加载老人列表
+    // Load seniors list
     LaunchedEffect(Unit) {
         viewModel.loadSeniors()
     }
 
-    // 监听创建成功 - 不再自动弹出二维码对话框
+    // Listen for create success - no longer auto-show QR code dialog
     LaunchedEffect(createState.isSuccess) {
         if (createState.isSuccess) {
-            showCreateForm = false  // 关闭创建表单
+            showCreateForm = false  // Close create form
             viewModel.resetCreateForm()
             viewModel.loadSeniors()
-            snackbarHostState.showSnackbar("老人账户创建成功！")
+            snackbarHostState.showSnackbar("Senior account created successfully!")
         }
     }
     
-    // 监听错误
+    // Listen for errors
     LaunchedEffect(createState.errorMessage) {
         createState.errorMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -129,7 +133,7 @@ fun CreateSeniorScreen(
         }
     }
     
-    // 二维码对话框不再在这里显示，改为在卡片上点击按钮显示
+    // QR code dialog is no longer shown here, changed to show when clicking button on card
 }
 
 @Composable
@@ -202,12 +206,28 @@ private fun SeniorsList(seniors: List<Senior>) {
 }
 
 @Composable
-private fun SeniorCard(senior: Senior) {
+private fun SeniorCard(senior: Senior, viewModel: ManageSeniorsViewModel = hiltViewModel()) {
     val clipboardManager = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var showQRCodeDialog by remember { mutableStateOf(false) }
     var qrCodeBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    
+    val manageState by viewModel.manageSeniorsState.collectAsStateWithLifecycle()
+    val currentUserId = manageState.currentUserId
+    
+    // Get avatar icon based on age and gender
+    val avatarIcon = AvatarHelper.getAvatarIcon(senior.avatarType)
+    
+    // Get current user's relationship
+    val userRelationship = senior.caregiverRelationships[currentUserId]
+    val displayName = if (userRelationship?.nickname?.isNotBlank() == true) {
+        userRelationship.nickname
+    } else if (userRelationship?.relationship?.isNotBlank() == true) {
+        RelationshipHelper.getDefaultAddressTitle(userRelationship.relationship, senior.gender)
+    } else {
+        senior.name
+    }
     
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -221,31 +241,73 @@ private fun SeniorCard(senior: Senior) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text(senior.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    // Avatar icon
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(Color(0xFFF3E8FF), CircleShape),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(senior.id, fontSize = 12.sp, color = Color(0xFF7C3AED))
-                        IconButton(
-                            onClick = {
-                                clipboardManager.setText(AnnotatedString(senior.id))
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(
-                                        message = "ID copied to clipboard",
-                                        duration = SnackbarDuration.Short
-                                    )
-                                }
-                            },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = "Copy ID",
-                                modifier = Modifier.size(16.dp),
-                                tint = Color(0xFF7C3AED)
+                        Icon(
+                            imageVector = avatarIcon,
+                            contentDescription = "Avatar",
+                            modifier = Modifier.size(28.dp),
+                            tint = Color(0xFF8B5CF6)
+                        )
+                    }
+                    
+                    Column {
+                        Text(
+                            text = displayName,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = senior.name,
+                            fontSize = 13.sp,
+                            color = Color(0xFF64748B)
+                        )
+                        if (userRelationship?.relationship?.isNotBlank() == true) {
+                            Text(
+                                text = userRelationship.relationship,
+                                fontSize = 13.sp,
+                                color = Color(0xFF7C3AED),
+                                fontWeight = FontWeight.Medium
                             )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = senior.id,
+                                fontSize = 12.sp,
+                                color = Color(0xFF7C3AED)
+                            )
+                            IconButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(senior.id))
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            message = "ID copied to clipboard",
+                                            duration = SnackbarDuration.Short
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "Copy ID",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color(0xFF7C3AED)
+                                )
+                            }
                         }
                     }
                 }
@@ -274,10 +336,10 @@ private fun SeniorCard(senior: Senior) {
             
             Spacer(Modifier.height(16.dp))
             
-            // 二维码按钮
+            // QR Code button
             Button(
                 onClick = {
-                    // 生成二维码数据
+                    // Generate QR code data
                     val qrData = """
                         {
                           "type": "pulselink_login",
@@ -286,7 +348,7 @@ private fun SeniorCard(senior: Senior) {
                         }
                     """.trimIndent()
                     
-                    // 生成二维码图片
+                    // Generate QR code image
                     qrCodeBitmap = com.alvin.pulselink.util.QRCodeGenerator.generateQRCode(qrData)
                     showQRCodeDialog = true
                 },
@@ -301,12 +363,12 @@ private fun SeniorCard(senior: Senior) {
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("查看登录二维码", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("View Login QR Code", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
     
-    // 二维码对话框
+    // QR Code dialog
     if (showQRCodeDialog) {
         QRCodeDialog(
             seniorId = senior.id,
@@ -324,10 +386,15 @@ private fun InfoItem(
     value: String
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Icon(icon, null, Modifier.size(18.dp), tint = Color(0xFF8B5CF6))
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = Color(0xFF8B5CF6)
+        )
         Column {
-            Text(label, fontSize = 11.sp, color = Color(0xFF9CA3AF))
-            Text(value, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text(text = label, fontSize = 11.sp, color = Color(0xFF9CA3AF))
+            Text(text = value, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
@@ -354,6 +421,116 @@ private fun CreateForm(state: CreateSeniorUiState, viewModel: ManageSeniorsViewM
                         GenderChip("Female", state.gender == "Female") { viewModel.onGenderChanged("Female") }
                     }
                 }
+            }
+            
+            // Relationship selection (Who you are to the senior)
+            Column {
+                Text("You are the senior's...", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color(0xFF64748B))
+                Spacer(Modifier.height(8.dp))
+                
+                // Common relationships in a grid
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        RelationshipChip("Son", state.relationship == "Son", Modifier.weight(1f)) { 
+                            viewModel.onRelationshipChanged("Son") 
+                        }
+                        RelationshipChip("Daughter", state.relationship == "Daughter", Modifier.weight(1f)) { 
+                            viewModel.onRelationshipChanged("Daughter") 
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        RelationshipChip("Grandson", state.relationship == "Grandson", Modifier.weight(1f)) { 
+                            viewModel.onRelationshipChanged("Grandson") 
+                        }
+                        RelationshipChip("Granddaughter", state.relationship == "Granddaughter", Modifier.weight(1f)) { 
+                            viewModel.onRelationshipChanged("Granddaughter") 
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        RelationshipChip("Spouse", state.relationship == "Spouse", Modifier.weight(1f)) { 
+                            viewModel.onRelationshipChanged("Spouse") 
+                        }
+                        RelationshipChip("Sibling", state.relationship == "Sibling", Modifier.weight(1f)) { 
+                            viewModel.onRelationshipChanged("Sibling") 
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        RelationshipChip("Friend", state.relationship == "Friend", Modifier.weight(1f)) { 
+                            viewModel.onRelationshipChanged("Friend") 
+                        }
+                        RelationshipChip("Caregiver", state.relationship == "Caregiver", Modifier.weight(1f)) { 
+                            viewModel.onRelationshipChanged("Caregiver") 
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        RelationshipChip("Other", state.relationship == "Other", Modifier.weight(1f)) { 
+                            viewModel.onRelationshipChanged("Other") 
+                        }
+                        // Empty space for symmetry
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
+                
+                state.relationshipError?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error, fontSize= 12.sp)
+                }
+            }
+            
+            // How you call them (Nickname) - Optional
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("How you call them", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color(0xFF64748B))
+                    Text("(Optional)", fontSize = 12.sp, color = Color(0xFF9CA3AF))
+                }
+                Spacer(Modifier.height(8.dp))
+                
+                val nicknameAge = state.age.toIntOrNull() ?: 0
+                val defaultNickname = if (state.relationship.isNotBlank() && nicknameAge > 0) {
+                    RelationshipHelper.getDefaultAddressTitle(state.relationship, state.gender)
+                } else {
+                    "e.g., Dad, Mom, Grandpa"
+                }
+                
+                OutlinedTextField(
+                    value = state.nickname,
+                    onValueChange = viewModel::onNicknameChanged,
+                    placeholder = { Text(defaultNickname, color = Color(0xFF9CA3AF)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = Color.White,
+                        focusedContainerColor = Color.White,
+                        unfocusedBorderColor = Color(0xFFE5E7EB),
+                        focusedBorderColor = Color(0xFF8B5CF6)
+                    ),
+                    singleLine = true
+                )
+                
+                Text(
+                    "Leave blank to use: $defaultNickname",
+                    fontSize = 12.sp,
+                    color = Color(0xFF9CA3AF),
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
         }
 
@@ -465,6 +642,26 @@ private fun GenderChip(label: String, selected: Boolean, onClick: () -> Unit) {
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = if (selected) Color.White else Color(0xFF6B7280),
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+        )
+    }
+}
+
+@Composable
+private fun RelationshipChip(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) Color(0xFF8B5CF6) else Color(0xFFF9FAFB),
+        border = BorderStroke(1.dp, if (selected) Color(0xFF8B5CF6) else Color(0xFFE5E7EB))
+    ) {
+        Text(
+            label,
+            fontSize = 14.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) Color.White else Color(0xFF6B7280),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
     }
 }

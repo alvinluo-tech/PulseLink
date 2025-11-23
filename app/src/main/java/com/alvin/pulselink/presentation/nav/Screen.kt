@@ -86,6 +86,12 @@ sealed class Screen(val route: String) {
     /** 绑定已存在的老人账户 */
     object LinkSenior : Screen("caregiver/link_senior")
     
+    /** 链接请求历史记录 */
+    object LinkHistory : Screen("caregiver/link_history")
+    
+    /** 家庭成员链接请求审批（Link Guard） */
+    object FamilyRequests : Screen("caregiver/family_requests")
+    
     // ===== 测试页面 (开发用) =====
     object FirebaseTest : Screen("test/firebase")
 }

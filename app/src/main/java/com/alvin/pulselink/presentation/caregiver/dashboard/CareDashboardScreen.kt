@@ -31,7 +31,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 data class LovedOne(
     val id: String,
-    val name: String,
+    val name: String, // 显示名称（nickname 或默认称呼）
+    val actualName: String = name, // 真实姓名
     val relationship: String,
     val emoji: String,
     val status: HealthStatus,
@@ -136,35 +137,77 @@ fun CareDashboardScreen(
                 )
             }
             
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(uiState.lovedOnes) { lovedOne ->
-                    LovedOneCard(
-                        lovedOne = lovedOne,
-                        onClick = { onLovedOneClick(lovedOne.id) }
-                    )
-                }
-                
-                item {
-                    // Bottom hint
-                    Text(
-                        text = "Tap on any person to view detailed health\nreports and alerts",
-                        fontSize = 14.sp,
-                        color = Color(0xFF9333EA),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp)
-                            .background(
-                                color = Color(0xFFF3E8FF),
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                            .padding(16.dp)
-                    )
+            // Loved Ones List
+            if (uiState.lovedOnes.isEmpty()) {
+                // Empty state
+                EmptyDashboardState()
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(uiState.lovedOnes) { lovedOne ->
+                        LovedOneCard(
+                            lovedOne = lovedOne,
+                            onClick = { onLovedOneClick(lovedOne.id) }
+                        )
+                    }
+                    
+                    item {
+                        // Bottom hint
+                        Text(
+                            text = "Tap on any person to view detailed health\nreports and alerts",
+                            fontSize = 14.sp,
+                            color = Color(0xFF9333EA),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp)
+                                .background(
+                                    color = Color(0xFFF3E8FF),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .padding(16.dp)
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EmptyDashboardState() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = Icons.Default.People,
+            contentDescription = null,
+            tint = Color(0xFFD1D5DB),
+            modifier = Modifier.size(80.dp)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = "No Loved Ones Yet",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFF6B7280)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "Create or link a senior account to start\nmonitoring their health",
+            fontSize = 14.sp,
+            color = Color(0xFF9CA3AF),
+            textAlign = TextAlign.Center,
+            lineHeight = 20.sp
+        )
     }
 }
 
@@ -285,6 +328,7 @@ private fun LovedOneCard(
             Spacer(modifier = Modifier.width(16.dp))
             
             Column(modifier = Modifier.weight(1f)) {
+                // Display name: 称呼（真实名字）
                 Text(
                     text = lovedOne.name,
                     fontSize = 18.sp,

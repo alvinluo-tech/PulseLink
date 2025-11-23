@@ -28,6 +28,8 @@ import com.alvin.pulselink.presentation.caregiver.settings.CareSettingsScreen
 import com.alvin.pulselink.presentation.caregiver.senior.ManageSeniorsScreen
 import com.alvin.pulselink.presentation.caregiver.senior.CreateSeniorScreen
 import com.alvin.pulselink.presentation.caregiver.senior.LinkSeniorScreen
+import com.alvin.pulselink.presentation.caregiver.senior.LinkHistoryScreen
+import com.alvin.pulselink.presentation.caregiver.linkguard.FamilyRequestsScreen
 import com.alvin.pulselink.presentation.senior.home.HomeScreen
 import com.alvin.pulselink.presentation.senior.health.HealthDataScreen
 import com.alvin.pulselink.presentation.senior.history.HealthHistoryScreen
@@ -323,6 +325,7 @@ fun AppNavigation(
                 onNavigateToManageSeniors = { navController.navigate(Screen.ManageSeniors.route) },
                 onNavigateToCreateSenior = { navController.navigate(Screen.CreateSenior.route) },
                 onNavigateToManageFamily = { navController.navigate(Screen.LinkSenior.route) },
+                onNavigateToLinkGuard = { navController.navigate(Screen.FamilyRequests.route) },
                 onNavigateToPrivacySecurity = { /* TODO: Implement */ },
                 onNavigateToHelpCenter = { /* TODO: Implement */ },
                 onLogout = {
@@ -364,6 +367,19 @@ fun AppNavigation(
         
         composable(route = Screen.LinkSenior.route) {
             LinkSeniorScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToHistory = { navController.navigate(Screen.LinkHistory.route) }
+            )
+        }
+        
+        composable(route = Screen.LinkHistory.route) {
+            LinkHistoryScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        
+        composable(route = Screen.FamilyRequests.route) {
+            FamilyRequestsScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

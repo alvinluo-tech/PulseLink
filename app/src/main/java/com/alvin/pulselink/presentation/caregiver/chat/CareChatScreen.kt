@@ -100,18 +100,86 @@ fun CareChatScreen(
             Spacer(modifier = Modifier.height(24.dp))
             
             // Loved ones list
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(uiState.lovedOnes) { lovedOne ->
-                    ChatLovedOneCard(
-                        lovedOne = lovedOne,
-                        onClick = { onLovedOneClick(lovedOne.id) }
-                    )
+            if (uiState.lovedOnes.isEmpty()) {
+                // Empty state
+                EmptyChatState()
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    items(uiState.lovedOnes) { lovedOne ->
+                        ChatLovedOneCard(
+                            lovedOne = lovedOne,
+                            onClick = { onLovedOneClick(lovedOne.id) }
+                        )
+                    }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyChatState() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.Chat,
+            contentDescription = null,
+            tint = Color(0xFFD1D5DB),
+            modifier = Modifier.size(100.dp)
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "No Conversations Yet",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF6B7280)
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = "Add loved ones to start conversations\nand check their health updates",
+            fontSize = 15.sp,
+            color = Color(0xFF9CA3AF),
+            textAlign = TextAlign.Center,
+            lineHeight = 22.sp
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Surface(
+            color = Color(0xFFF3E8FF),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Chat,
+                    contentDescription = null,
+                    tint = Color(0xFF9333EA),
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Create or link a senior account first",
+                    fontSize = 14.sp,
+                    color = Color(0xFF7C3AED),
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
     }

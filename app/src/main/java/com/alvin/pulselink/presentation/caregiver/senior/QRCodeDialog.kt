@@ -21,13 +21,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 
 /**
- * 二维码展示对话框
+ * QR Code Display Dialog
  * 
- * @param seniorId 老人账户ID（例如：SNR-ABCD1234）
- * @param password 老人账户密码
- * @param qrCodeBitmap 二维码图片
- * @param onDismiss 关闭对话框回调
- * @param onShare 分享按钮回调（可选，用于分享图片到其他应用）
+ * @param seniorId Senior account ID (e.g., SNR-ABCD1234)
+ * @param password Senior account password
+ * @param qrCodeBitmap QR code image
+ * @param onDismiss Close dialog callback
+ * @param onShare Share button callback (optional, for sharing image to other apps)
  */
 @Composable
 fun QRCodeDialog(
@@ -55,26 +55,26 @@ fun QRCodeDialog(
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // 标题栏
+                // Title bar
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "老人账户登录信息",
+                        text = "Senior Account Login Info",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
                     
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                        Icon(Icons.Default.Close, contentDescription = "Close")
                     }
                 }
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                // 二维码图片
+                // QR code image
                 if (qrCodeBitmap != null) {
                     Card(
                         modifier = Modifier
@@ -93,13 +93,13 @@ fun QRCodeDialog(
                         ) {
                             Image(
                                 bitmap = qrCodeBitmap.asImageBitmap(),
-                                contentDescription = "登录二维码",
+                                contentDescription = "Login QR Code",
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
                     }
                 } else {
-                    // 二维码生成失败的提示
+                    // QR code generation failed message
                     Card(
                         modifier = Modifier
                             .size(280.dp)
@@ -113,7 +113,7 @@ fun QRCodeDialog(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "二维码生成失败",
+                                text = "QR Code Generation Failed",
                                 color = MaterialTheme.colorScheme.error
                             )
                         }
@@ -122,9 +122,9 @@ fun QRCodeDialog(
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                // 账户信息
+                // Account information
                 AccountInfoItem(
-                    label = "账号ID",
+                    label = "Account ID",
                     value = seniorId,
                     onCopy = {
                         clipboardManager.setText(AnnotatedString(seniorId))
@@ -134,7 +134,7 @@ fun QRCodeDialog(
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 AccountInfoItem(
-                    label = "密码",
+                    label = "Password",
                     value = password,
                     onCopy = {
                         clipboardManager.setText(AnnotatedString(password))
@@ -143,7 +143,7 @@ fun QRCodeDialog(
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                // 提示信息
+                // Instructions
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -154,16 +154,16 @@ fun QRCodeDialog(
                         modifier = Modifier.padding(16.dp)
                     ) {
                         Text(
-                            text = "📱 使用说明",
+                            text = "📱 How to Use",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "1. 老人端打开应用，选择「扫码登录」\n" +
-                                   "2. 扫描此二维码即可自动登录\n" +
-                                   "3. 或手动输入账号ID和密码登录",
+                            text = "1. Open the senior app and select 'Scan to Login'\n" +
+                                   "2. Scan this QR code to login automatically\n" +
+                                   "3. Or manually enter the Account ID and Password",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -172,12 +172,12 @@ fun QRCodeDialog(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                // 按钮组
+                // Button group
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // 分享按钮（如果提供了回调）
+                    // Share button (if callback provided)
                     if (onShare != null) {
                         OutlinedButton(
                             onClick = onShare,
@@ -189,16 +189,16 @@ fun QRCodeDialog(
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("分享")
+                            Text("Share")
                         }
                     }
                     
-                    // 关闭按钮
+                    // Close button
                     Button(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("关闭")
+                        Text("Close")
                     }
                 }
             }
@@ -207,7 +207,7 @@ fun QRCodeDialog(
 }
 
 /**
- * 账户信息条目（带复制功能）
+ * Account information item (with copy function)
  */
 @Composable
 private fun AccountInfoItem(
@@ -246,7 +246,7 @@ private fun AccountInfoItem(
             IconButton(onClick = onCopy) {
                 Icon(
                     Icons.Default.ContentCopy,
-                    contentDescription = "复制$label",
+                    contentDescription = "Copy $label",
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
