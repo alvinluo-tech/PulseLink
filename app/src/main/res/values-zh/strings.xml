@@ -29,7 +29,7 @@
     <string name="greeting_hello">您好，张女士</string>
     <string name="greeting_subtitle">今天天气真好！</string>
     <string name="health_data_title">健康\n上报</string>
-    <string name="health_data_value">血压 120/80</string>
+    <string name="health_data_value">血压 --/--</string>
     <string name="reminders_title">提醒</string>
     <string name="reminders_count">今天3项</string>
     <string name="health_history_title">健康\n记录</string>

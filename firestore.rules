@@ -54,8 +54,10 @@ service cloud.firestore {
       }
 
       function isSeniorSelf() {
-        // 老人端：允许通过自己的 seniorId 读取（无需 Firebase auth）
-        return seniorId == resource.data.id;
+        // 老人端：通过 users 集合查找当前用户的 seniorId，然后与文档 ID 匹配
+        return isAuthenticated() 
+               && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+               && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.seniorId == seniorId;
       }
 
       // 仅允许创建者创建；创建时必须将创建者加入 caregiverIds
@@ -78,8 +80,10 @@ service cloud.firestore {
                     && request.resource.data.createdAt is int
                     && request.resource.data.password is string;
 
-      // 读取：创建者、已绑定的护理者、或老人自己（通过 seniorId 匹配）可读
-      allow read: if isCreator() || isCaregiverBound() || isSeniorSelf();
+      // 读取：
+      // 1. 创建者、已绑定的护理者、或老人自己 → 可以读取完整数据
+      // 2. 任何已认证的用户 → 可以读取基本信息（用于搜索和发送链接请求）
+      allow read: if isCreator() || isCaregiverBound() || isSeniorSelf() || isAuthenticated();
 
       // 删除：仅创建者可删除
       allow delete: if isCreator();

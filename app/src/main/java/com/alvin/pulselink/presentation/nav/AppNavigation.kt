@@ -31,7 +31,7 @@ import com.alvin.pulselink.presentation.caregiver.senior.LinkSeniorScreen
 import com.alvin.pulselink.presentation.caregiver.senior.LinkHistoryScreen
 import com.alvin.pulselink.presentation.caregiver.linkguard.FamilyRequestsScreen
 import com.alvin.pulselink.presentation.senior.home.HomeScreen
-import com.alvin.pulselink.presentation.senior.health.HealthDataScreen
+import com.alvin.pulselink.presentation.senior.health.HealthReportScreen
 import com.alvin.pulselink.presentation.senior.history.HealthHistoryScreen
 import com.alvin.pulselink.presentation.senior.profile.ProfileScreen
 import com.alvin.pulselink.presentation.senior.reminder.ReminderScreen
@@ -240,7 +240,7 @@ fun AppNavigation(
         
         // ===== 老人端功能页 =====
         composable(route = Screen.HealthData.route) {
-            HealthDataScreen(
+            HealthReportScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToHome = { navController.navigate(Screen.SeniorHome.route) },
                 onNavigateToProfile = { navController.navigate(Screen.SeniorProfile.route) },
@@ -253,7 +253,8 @@ fun AppNavigation(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateHome = { navController.navigate(Screen.SeniorHome.route) },
                 onNavigateProfile = { navController.navigate(Screen.SeniorProfile.route) },
-                onNavigateAssistant = { navController.navigate(Screen.VoiceAssistant.route) }
+                onNavigateAssistant = { navController.navigate(Screen.VoiceAssistant.route) },
+                onNavigateToHealthReport = { navController.navigate(Screen.HealthData.route) }
             )
         }
         

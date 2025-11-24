@@ -131,14 +131,124 @@ fun ReminderListScreen(
             }
             
             // Reminders List
-            LazyColumn(
+            if (uiState.reminders.isEmpty()) {
+                EmptyRemindersState()
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(uiState.reminders) { reminder ->
+                        ReminderItemCard(reminder = reminder)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyRemindersState() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        // Animated icon background
+        Box(
+            modifier = Modifier
+                .size(140.dp)
+                .background(
+                    color = Color(0xFFFFF3E0),
+                    shape = CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .size(100.dp)
+                    .background(
+                        color = Color(0xFFFFE0B2),
+                        shape = CircleShape
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-                items(uiState.reminders) { reminder ->
-                    ReminderItemCard(reminder = reminder)
+                Icon(
+                    imageVector = Icons.Default.MedicalServices,
+                    contentDescription = "No reminders",
+                    tint = Color(0xFFFF9800),
+                    modifier = Modifier.size(56.dp)
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(36.dp))
+        
+        Text(
+            text = "All Clear!",
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF2C3E50)
+        )
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        Text(
+            text = "No medication reminders for today",
+            fontSize = 18.sp,
+            color = Color(0xFF6B7280),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Text(
+            text = "Enjoy your day and stay healthy! 😊",
+            fontSize = 16.sp,
+            color = Color(0xFF9CA3AF),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        
+        Spacer(modifier = Modifier.height(48.dp))
+        
+        // Decorative card with tips
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = Color(0xFFE8F5E9),
+            shadowElevation = 2.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = Color(0xFF4CAF50),
+                    modifier = Modifier.size(32.dp)
+                )
+                
+                Spacer(modifier = Modifier.width(16.dp))
+                
+                Column {
+                    Text(
+                        text = "Health Tip",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF2C3E50)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Drink plenty of water and take regular walks",
+                        fontSize = 14.sp,
+                        color = Color(0xFF6B7280),
+                        lineHeight = 20.sp
+                    )
                 }
             }
         }

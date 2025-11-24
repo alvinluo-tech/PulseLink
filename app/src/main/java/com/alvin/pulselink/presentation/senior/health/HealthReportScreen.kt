@@ -31,8 +31,8 @@ import com.alvin.pulselink.presentation.common.components.SeniorBottomNavigation
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HealthDataScreen(
-    viewModel: HealthDataViewModel = hiltViewModel(),
+fun HealthReportScreen(
+    viewModel: HealthReportViewModel = hiltViewModel(),
     onNavigateBack: () -> Unit,
     onNavigateToHome: () -> Unit,
     onNavigateToProfile: () -> Unit,
@@ -126,7 +126,7 @@ fun HealthDataScreen(
             Spacer(modifier = Modifier.height(32.dp))
             
             // High Pressure (Systolic)
-            HealthDataInputField(
+            HealthReportInputField(
                 label = "High Pressure (Systolic)",
                 value = uiState.systolicPressure,
                 onValueChange = viewModel::onSystolicPressureChange,
@@ -136,7 +136,7 @@ fun HealthDataScreen(
             Spacer(modifier = Modifier.height(24.dp))
             
             // Low Pressure (Diastolic)
-            HealthDataInputField(
+            HealthReportInputField(
                 label = "Low Pressure (Diastolic)",
                 value = uiState.diastolicPressure,
                 onValueChange = viewModel::onDiastolicPressureChange,
@@ -146,7 +146,7 @@ fun HealthDataScreen(
             Spacer(modifier = Modifier.height(24.dp))
             
             // Heart Rate
-            HealthDataInputField(
+            HealthReportInputField(
                 label = "Heart Rate (bpm)",
                 value = uiState.heartRate,
                 onValueChange = viewModel::onHeartRateChange,
@@ -196,7 +196,7 @@ fun HealthDataScreen(
 }
 
 @Composable
-private fun HealthDataInputField(
+private fun HealthReportInputField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,

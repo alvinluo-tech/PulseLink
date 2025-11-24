@@ -54,7 +54,7 @@ app/src/main/java/com/alvin/pulselink/
 │   │       └── CareChatScreen.kt
 │   ├── senior/                     # 老人端（Senior）
 │   │   ├── home/ HomeScreen.kt / HomeViewModel.kt
-│   │   ├── health/ HealthDataScreen.kt / HealthDataViewModel.kt
+│   │   ├── health/ HealthReportScreen.kt / HealthReportViewModel.kt
 │   │   ├── history/ HealthHistoryScreen.kt / HealthHistoryViewModel.kt
 │   │   ├── profile/ ProfileScreen.kt / ProfileViewModel.kt
 │   │   ├── reminder/ Reminder* 屏与 ViewModel

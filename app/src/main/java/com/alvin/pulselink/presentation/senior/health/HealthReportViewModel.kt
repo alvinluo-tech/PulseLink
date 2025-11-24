@@ -12,12 +12,12 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class HealthDataViewModel @Inject constructor(
+class HealthReportViewModel @Inject constructor(
     private val saveHealthDataUseCase: SaveHealthDataUseCase
 ) : ViewModel() {
     
-    private val _uiState = MutableStateFlow(HealthDataUiState())
-    val uiState: StateFlow<HealthDataUiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(HealthReportUiState())
+    val uiState: StateFlow<HealthReportUiState> = _uiState.asStateFlow()
     
     fun onSystolicPressureChange(value: String) {
         if (value.isEmpty() || value.all { it.isDigit() }) {

@@ -1,25 +1,36 @@
 package com.alvin.pulselink.presentation.senior.profile
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.data.local.LocalDataSource
 import com.alvin.pulselink.domain.repository.AuthRepository
+import com.alvin.pulselink.domain.repository.HealthRepository
+import com.alvin.pulselink.domain.repository.SeniorRepository
+import com.alvin.pulselink.util.AvatarHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val authRepository: AuthRepository,
-    private val localDataSource: LocalDataSource
+    private val localDataSource: LocalDataSource,
+    private val seniorRepository: SeniorRepository,
+    private val healthRepository: HealthRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
+    
+    companion object {
+        private const val TAG = "ProfileViewModel"
+    }
     
     init {
         loadProfileData()
@@ -27,53 +38,140 @@ class ProfileViewModel @Inject constructor(
     
     private fun loadProfileData() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(isLoading = true, error = null) }
             
-            // 1️⃣ 立即从本地缓存读取 (快速显示)
-            val cachedUser = localDataSource.getUser()
-            val cachedName = cachedUser?.second ?: "User"
-            
-            _uiState.update { 
-                it.copy(
-                    userName = cachedName,
-                    isLoading = false
-                )
+            try {
+                // 1️⃣ 获取当前用户的 senior ID (从本地缓存)
+                val cachedUser = localDataSource.getUser()
+                val seniorId = cachedUser?.first
+                val userName = cachedUser?.second
+                
+                Log.d(TAG, "Cached user: id=$seniorId, name=$userName, role=${cachedUser?.third}")
+                
+                if (seniorId.isNullOrBlank()) {
+                    Log.e(TAG, "❌ No senior ID found in local cache")
+                    _uiState.update { 
+                        it.copy(
+                            isLoading = false,
+                            error = "User not logged in"
+                        )
+                    }
+                    return@launch
+                }
+                
+                Log.d(TAG, "✅ Loading profile for senior: $seniorId")
+                
+                // 2️⃣ 从 Firestore 获取 Senior 数据
+                val seniorResult = seniorRepository.getSeniorById(seniorId)
+                
+                if (seniorResult.isFailure) {
+                    val error = seniorResult.exceptionOrNull()
+                    Log.e(TAG, "❌ Failed to load senior data: ${error?.message}", error)
+                    _uiState.update { 
+                        it.copy(
+                            isLoading = false,
+                            error = "Failed to load profile: ${error?.message}"
+                        )
+                    }
+                    return@launch
+                }
+                
+                val senior = seniorResult.getOrNull()!!
+                Log.d(TAG, "✅ Senior data loaded: name=${senior.name}, age=${senior.age}, gender=${senior.gender}, avatarType=${senior.avatarType}")
+                
+                // 3️⃣ 计算使用天数 (从 createdAt 到现在)
+                val currentTimeMillis = System.currentTimeMillis()
+                val daysDiff = TimeUnit.MILLISECONDS.toDays(currentTimeMillis - senior.createdAt)
+                // 如果是 0 天（注册当天），则显示为 1 天
+                val daysUsed = (daysDiff.toInt().coerceAtLeast(0) + 1)
+                
+                Log.d(TAG, "📅 Days used: $daysUsed (created: ${senior.createdAt}, now: $currentTimeMillis, diff: $daysDiff)")
+                
+                // 4️⃣ 根据 avatarType 获取 emoji
+                val avatarEmoji = if (senior.avatarType.isNotBlank()) {
+                    AvatarHelper.getAvatarEmoji(senior.avatarType)
+                } else {
+                    // 如果没有 avatarType，根据年龄和性别生成
+                    Log.w(TAG, "⚠️ No avatarType found, generating from age and gender")
+                    AvatarHelper.getAvatarEmojiByAgeGender(senior.age, senior.gender)
+                }
+                Log.d(TAG, "👤 Avatar emoji: $avatarEmoji (type: ${senior.avatarType})")
+                
+                // 5️⃣ 获取最新的健康数据 - 从 health_data 集合读取
+                Log.d(TAG, "🔍 Fetching latest health data...")
+                val healthDataResult = healthRepository.getHealthHistory()
+                val healthHistoryList = healthDataResult.getOrNull() ?: emptyList()
+                
+                Log.d(TAG, "📊 Health history size: ${healthHistoryList.size}")
+                
+                val latestHealthData = healthHistoryList.firstOrNull()
+                
+                if (latestHealthData != null) {
+                    Log.d(TAG, "✅ Latest health data: BP=${latestHealthData.systolic}/${latestHealthData.diastolic}, HR=${latestHealthData.heartRate}")
+                    
+                    // 分析血压状态
+                    val bpStatus = analyzeBloodPressure(latestHealthData.systolic, latestHealthData.diastolic)
+                    
+                    _uiState.update { 
+                        it.copy(
+                            userName = senior.name,
+                            age = senior.age,
+                            gender = senior.gender,
+                            avatarType = senior.avatarType,
+                            avatarEmoji = avatarEmoji,
+                            daysUsed = daysUsed,
+                            bloodPressure = "${latestHealthData.systolic}/${latestHealthData.diastolic}",
+                            bloodPressureStatus = bpStatus,
+                            heartRate = latestHealthData.heartRate,
+                            isLoading = false
+                        )
+                    }
+                } else {
+                    Log.w(TAG, "⚠️ No health data found in history")
+                    
+                    // 没有健康数据时仍然显示基本信息
+                    _uiState.update { 
+                        it.copy(
+                            userName = senior.name,
+                            age = senior.age,
+                            gender = senior.gender,
+                            avatarType = senior.avatarType,
+                            avatarEmoji = avatarEmoji,
+                            daysUsed = daysUsed,
+                            bloodPressure = "--/--",
+                            bloodPressureStatus = "No Data",
+                            heartRate = 0,
+                            isLoading = false
+                        )
+                    }
+                }
+                
+                Log.d(TAG, "✅ Profile loaded successfully")
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error loading profile data: ${e.message}", e)
+                e.printStackTrace()
+                _uiState.update { 
+                    it.copy(
+                        isLoading = false,
+                        error = e.message ?: "Unknown error"
+                    )
+                }
             }
-            
-            // 2️⃣ 后台静默同步 Firestore (检查更新)
-            syncFromFirestore()
         }
     }
     
     /**
-     * 静默同步 Firestore 数据
-     * 如果有变化，更新本地缓存和 UI
+     * 分析血压状态
      */
-    private suspend fun syncFromFirestore() {
-        try {
-            val firestoreUser = authRepository.getCurrentUser()
-            
-            if (firestoreUser != null) {
-                val cachedUser = localDataSource.getUser()
-                
-                // 检查是否有变化
-                if (cachedUser?.second != firestoreUser.username) {
-                    // 有变化,更新本地缓存
-                    localDataSource.saveUser(
-                        id = firestoreUser.id,
-                        username = firestoreUser.username,
-                        role = firestoreUser.role.name.lowercase()
-                    )
-                    
-                    // 更新 UI
-                    _uiState.update { 
-                        it.copy(userName = firestoreUser.username)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            // 静默失败,不影响用户体验
-            // 用户仍然看到缓存的数据
+    private fun analyzeBloodPressure(systolic: Int, diastolic: Int): String {
+        return when {
+            systolic >= 180 || diastolic >= 120 -> "High Risk"
+            systolic >= 140 || diastolic >= 90 -> "High BP"
+            systolic >= 130 || diastolic >= 80 -> "Elevated"
+            systolic >= 120 && diastolic < 80 -> "Slightly High"
+            systolic < 90 || diastolic < 60 -> "Low BP"
+            else -> "Normal"
         }
     }
 }

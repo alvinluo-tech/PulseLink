@@ -31,7 +31,8 @@ fun HealthHistoryScreen(
     onNavigateBack: () -> Unit,
     onNavigateHome: () -> Unit,
     onNavigateProfile: () -> Unit,
-    onNavigateAssistant: () -> Unit
+    onNavigateAssistant: () -> Unit,
+    onNavigateToHealthReport: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     
@@ -74,15 +75,101 @@ fun HealthHistoryScreen(
                 .background(Color(0xFFF2F6FB))
                 .padding(paddingValues)
         ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(uiState.records) { record ->
-                    HealthRecordCard(record = record)
+            if (uiState.isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Color(0xFF448AFF))
+                }
+            } else if (uiState.records.isEmpty()) {
+                EmptyHealthHistoryState(onNavigateToHealthReport = onNavigateToHealthReport)
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    items(uiState.records) { record ->
+                        HealthRecordCard(record = record)
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun EmptyHealthHistoryState(
+    onNavigateToHealthReport: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        // Icon background
+        Box(
+            modifier = Modifier
+                .size(120.dp)
+                .background(
+                    color = Color(0xFFE3F2FD),
+                    shape = CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Favorite,
+                contentDescription = "No health data",
+                tint = Color(0xFF448AFF),
+                modifier = Modifier.size(60.dp)
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        Text(
+            text = "No Health Records Yet",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF2C3E50)
+        )
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        Text(
+            text = "Start recording your blood pressure and heart rate to track your health journey",
+            fontSize = 16.sp,
+            color = Color(0xFF6B7280),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            lineHeight = 24.sp
+        )
+        
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        Button(
+            onClick = onNavigateToHealthReport,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF448AFF)
+            ),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth(0.7f)
+                .height(56.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Favorite,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = "Record Health Data",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }

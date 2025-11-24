@@ -35,20 +35,29 @@ class AuthRepositoryImpl @Inject constructor(
             val username = parts.getOrNull(0) ?: "User"
             val role = parts.getOrNull(1) ?: "SENIOR"
             
-            // 保存到本地 DataStore
-            localDataSource.saveUser(
-                id = user.uid,
-                username = username,
-                role = role.lowercase()  // "SENIOR" -> "senior"
-            )
+            // 🔍 从 Firestore users 文档读取完整用户信息（包括 seniorId）
+            var userId = user.uid
+            var finalUsername = username
+            var finalRole = role.lowercase()
             
-            // 尽量确保 Firestore 中有用户文档，但失败不影响登录成功
             runCatching {
                 val userDoc = withTimeout(8_000) {
                     firestore.collection("users").document(user.uid).get().await()
                 }
-                if (!userDoc.exists()) {
-                    // 创建用户文档
+                if (userDoc.exists()) {
+                    // 如果是 senior 用户，使用 seniorId 作为 ID
+                    val userRole = userDoc.getString("role") ?: role
+                    if (userRole == "SENIOR") {
+                        val seniorId = userDoc.getString("seniorId")
+                        if (!seniorId.isNullOrBlank()) {
+                            userId = seniorId  // ⭐ 使用 seniorId 而不是 auth UID
+                        }
+                    }
+                    // 更新用户名和角色
+                    finalUsername = userDoc.getString("username") ?: username
+                    finalRole = userRole.lowercase()
+                } else {
+                    // 创建用户文档（如果不存在）
                     val newUserDoc = hashMapOf(
                         "uid" to user.uid,
                         "email" to user.email,
@@ -64,7 +73,18 @@ class AuthRepositoryImpl @Inject constructor(
                             .await()
                     }
                 }
+            }.onFailure { e ->
+                android.util.Log.w("AuthRepo", "Failed to read/create user document: ${e.message}")
             }
+            
+            // 保存到本地 DataStore
+            localDataSource.saveUser(
+                id = userId,  // Senior: seniorId, Caregiver: auth UID
+                username = finalUsername,
+                role = finalRole
+            )
+            
+            android.util.Log.d("AuthRepo", "Login success: id=$userId, username=$finalUsername, role=$finalRole")
             
             Result.success(Unit)
         } catch (e: Exception) {

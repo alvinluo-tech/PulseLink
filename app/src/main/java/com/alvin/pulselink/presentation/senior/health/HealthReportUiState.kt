@@ -1,6 +1,6 @@
 package com.alvin.pulselink.presentation.senior.health
 
-data class HealthDataUiState(
+data class HealthReportUiState(
     val systolicPressure: String = "",
     val diastolicPressure: String = "",
     val heartRate: String = "",

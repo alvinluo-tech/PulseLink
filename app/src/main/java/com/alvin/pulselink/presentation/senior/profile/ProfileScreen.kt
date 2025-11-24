@@ -123,7 +123,7 @@ private fun UserProfileCard(uiState: ProfileUiState) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // User Icon
+                // User Avatar - Display Emoji instead of Icon
                 Box(
                     modifier = Modifier
                         .size(80.dp)
@@ -131,11 +131,10 @@ private fun UserProfileCard(uiState: ProfileUiState) {
                         .background(Color.White),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "User",
-                        tint = Color(0xFF5B9FFF),
-                        modifier = Modifier.size(48.dp)
+                    Text(
+                        text = uiState.avatarEmoji,
+                        fontSize = 48.sp,
+                        color = Color.Unspecified
                     )
                 }
                 
@@ -151,9 +150,13 @@ private fun UserProfileCard(uiState: ProfileUiState) {
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                // Age and Usage Info
+                // Age and Usage Info - Display real data
                 Text(
-                    text = "Age ${uiState.age} · Used ${uiState.daysUsed} days",
+                    text = if (uiState.age > 0 && uiState.daysUsed >= 0) {
+                        "Age ${uiState.age} · Used ${uiState.daysUsed} ${if (uiState.daysUsed == 1) "day" else "days"}"
+                    } else {
+                        "Loading..."
+                    },
                     fontSize = 16.sp,
                     color = Color.White.copy(alpha = 0.9f)
                 )

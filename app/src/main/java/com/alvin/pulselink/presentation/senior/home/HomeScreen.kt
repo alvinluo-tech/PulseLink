@@ -148,11 +148,12 @@ fun FeatureCardsGrid(
             )
             FeatureCard(
                 title = stringResource(R.string.reminders_title),
-                subtitle = uiState.nextReminderTime,
+                subtitle = if (uiState.nextReminderTime == "No reminders") "All clear!" else uiState.nextReminderTime,
                 icon = Icons.Default.Notifications,
                 backgroundColor = ReminderOrange,
                 modifier = Modifier.weight(1f),
-                onClick = onReminderClick
+                onClick = onReminderClick,
+                isEmpty = uiState.nextReminderTime == "No reminders"
             )
         }
         
@@ -163,11 +164,12 @@ fun FeatureCardsGrid(
         ) {
             FeatureCard(
                 title = stringResource(R.string.health_history_title),
-                subtitle = stringResource(R.string.health_history_subtitle),
+                subtitle = if (uiState.healthData == null) "No records yet" else stringResource(R.string.health_history_subtitle),
                 icon = Icons.Outlined.Timeline,
                 backgroundColor = SmartHomeBlue,
                 modifier = Modifier.weight(1f),
-                onClick = onHealthHistoryClick
+                onClick = onHealthHistoryClick,
+                isEmpty = uiState.healthData == null
             )
             FeatureCard(
                 title = stringResource(R.string.smart_device_title),
@@ -188,6 +190,7 @@ fun FeatureCard(
     icon: ImageVector,
     backgroundColor: Color,
     modifier: Modifier = Modifier,
+    isEmpty: Boolean = false,
     onClick: () -> Unit = {}
 ) {
     Card(
@@ -202,12 +205,55 @@ fun FeatureCard(
                 .padding(20.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = Color.White,
-                modifier = Modifier.size(48.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(
+                            color = if (isEmpty) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.25f),
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        tint = Color.White,
+                        modifier = Modifier.size(if (isEmpty) 28.dp else 32.dp)
+                    )
+                }
+                
+                // Show empty state indicator with pulsing animation
+                if (isEmpty) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.White.copy(alpha = 0.25f),
+                        modifier = Modifier.padding(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(Color.White, CircleShape)
+                            )
+                            Text(
+                                text = "Empty",
+                                fontSize = 10.sp,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
             
             Column {
                 Text(
@@ -217,12 +263,36 @@ fun FeatureCard(
                     color = Color.White,
                     lineHeight = 24.sp
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = subtitle,
-                    fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.9f)
-                )
+                Spacer(modifier = Modifier.height(6.dp))
+                
+                if (isEmpty) {
+                    // Empty state with icon
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = subtitle,
+                            fontSize = 14.sp,
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontWeight = FontWeight.Medium,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        )
+                    }
+                } else {
+                    Text(
+                        text = subtitle,
+                        fontSize = 16.sp,
+                        color = Color.White.copy(alpha = 0.95f),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
     }
