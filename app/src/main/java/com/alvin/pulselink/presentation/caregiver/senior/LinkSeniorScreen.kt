@@ -221,8 +221,8 @@ private fun LinkedSeniorCard(senior: Senior) {
     // Get current user ID from caregiverIds
     val currentUserId = senior.caregiverIds.firstOrNull() ?: ""
     
-    // Get avatar icon based on age and gender
-    val avatarIcon = AvatarHelper.getAvatarIcon(senior.avatarType)
+    // Get avatar emoji based on age and gender
+    val avatarEmoji = AvatarHelper.getAvatarEmoji(senior.avatarType)
     
     // Get current user's relationship
     val userRelationship = senior.caregiverRelationships[currentUserId]
@@ -252,20 +252,18 @@ private fun LinkedSeniorCard(senior: Senior) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    // Avatar icon
-                    Box(
+                    // Avatar emoji
+                    Text(
+                        text = avatarEmoji,
+                        fontSize = 40.sp,
                         modifier = Modifier
-                            .size(48.dp)
-                            .background(Color(0xFFDEEDFF), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = avatarIcon,
-                            contentDescription = "Avatar",
-                            modifier = Modifier.size(28.dp),
-                            tint = Color(0xFF2563EB)
-                        )
-                    }
+                            .size(56.dp)
+                            .background(
+                                color = Color.White,
+                                shape = CircleShape
+                            )
+                            .padding(8.dp)
+                    )
                     Column {
                         Text(displayName, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         Text(senior.name, fontSize = 13.sp, color = Color(0xFF64748B))

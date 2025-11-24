@@ -18,7 +18,20 @@ service cloud.firestore {
     
     // 健康数据
     match /health_data/{userId}/{document=**} {
+      // 用户可以读写自己的数据
       allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Caregiver 可以读取他们管理的老人的健康数据
+      // 通过检查 seniors 集合中，该老人的 caregiverIds 是否包含当前用户
+      allow read: if request.auth != null 
+                  && exists(/databases/$(database)/documents/seniors/$(getSeniorIdByUid(userId)))
+                  && request.auth.uid in get(/databases/$(database)/documents/seniors/$(getSeniorIdByUid(userId))).data.caregiverIds;
+    }
+    
+    // 辅助函数：通过 userId (Firebase Auth UID) 查找对应的 seniorId
+    function getSeniorIdByUid(uid) {
+      // 从 users 集合中查找 seniorId
+      return get(/databases/$(database)/documents/users/$(uid)).data.seniorId;
     }
     
     // 提醒数据

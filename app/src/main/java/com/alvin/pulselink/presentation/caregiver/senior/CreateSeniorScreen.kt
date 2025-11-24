@@ -216,8 +216,8 @@ private fun SeniorCard(senior: Senior, viewModel: ManageSeniorsViewModel = hiltV
     val manageState by viewModel.manageSeniorsState.collectAsStateWithLifecycle()
     val currentUserId = manageState.currentUserId
     
-    // Get avatar icon based on age and gender
-    val avatarIcon = AvatarHelper.getAvatarIcon(senior.avatarType)
+    // Get avatar emoji based on age and gender
+    val avatarEmoji = AvatarHelper.getAvatarEmoji(senior.avatarType)
     
     // Get current user's relationship
     val userRelationship = senior.caregiverRelationships[currentUserId]
@@ -246,20 +246,18 @@ private fun SeniorCard(senior: Senior, viewModel: ManageSeniorsViewModel = hiltV
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
-                    // Avatar icon
-                    Box(
+                    // Avatar emoji
+                    Text(
+                        text = avatarEmoji,
+                        fontSize = 40.sp,
                         modifier = Modifier
-                            .size(48.dp)
-                            .background(Color(0xFFF3E8FF), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = avatarIcon,
-                            contentDescription = "Avatar",
-                            modifier = Modifier.size(28.dp),
-                            tint = Color(0xFF8B5CF6)
-                        )
-                    }
+                            .size(56.dp)
+                            .background(
+                                color = Color.White,
+                                shape = CircleShape
+                            )
+                            .padding(8.dp)
+                    )
                     
                     Column {
                         Text(

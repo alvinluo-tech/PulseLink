@@ -107,6 +107,47 @@ class HealthRepositoryImpl @Inject constructor(
     }
     
     /**
+     * 根据老人的 UID 获取最新的健康数据
+     * 用于 Caregiver 查看老人的健康状态
+     */
+    override suspend fun getLatestHealthDataBySeniorUid(seniorUid: String): Result<HealthData?> {
+        return try {
+            android.util.Log.d("HealthRepo", "Getting latest health data for seniorUid: $seniorUid")
+            
+            val snapshot = firestore
+                .collection("health_data")
+                .document(seniorUid)
+                .collection("records")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(1)
+                .get()
+                .await()
+
+            val doc = snapshot.documents.firstOrNull()
+            if (doc == null) {
+                android.util.Log.d("HealthRepo", "No health data found for seniorUid: $seniorUid")
+                Result.success(null)
+            } else {
+                val systolic = (doc.getLong("systolic") ?: doc.getDouble("systolic")?.toLong())?.toInt()
+                val diastolic = (doc.getLong("diastolic") ?: doc.getDouble("diastolic")?.toLong())?.toInt()
+                val heartRate = (doc.getLong("heartRate") ?: doc.getDouble("heartRate")?.toLong())?.toInt() ?: 0
+                val timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
+
+                if (systolic == null || diastolic == null) {
+                    android.util.Log.w("HealthRepo", "Invalid health data for seniorUid: $seniorUid")
+                    Result.success(null)
+                } else {
+                    android.util.Log.d("HealthRepo", "Found health data: BP=$systolic/$diastolic, HR=$heartRate")
+                    Result.success(HealthData(systolic, diastolic, heartRate, timestamp))
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HealthRepo", "Error getting health data for seniorUid $seniorUid: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
      * 测试 Firestore 连接
      * 向 test_logs 集合写入测试数据
      */

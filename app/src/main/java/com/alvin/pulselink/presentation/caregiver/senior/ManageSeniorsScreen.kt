@@ -178,6 +178,9 @@ private fun SeniorCard(
     val isCreator = senior.creatorId == currentUserId
     // 检查是否是pending状态
     val isPending = pendingRequest != null && pendingRequest.status == "pending"
+    
+    // Get avatar emoji based on age and gender
+    val avatarEmoji = com.alvin.pulselink.util.AvatarHelper.getAvatarEmoji(senior.avatarType)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -194,46 +197,65 @@ private fun SeniorCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    // Avatar emoji
+                    Text(
+                        text = avatarEmoji,
+                        fontSize = 40.sp,
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(
+                                color = Color.White,
+                                shape = androidx.compose.foundation.shape.CircleShape
+                            )
+                            .padding(8.dp)
+                    )
+                    
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
 
-                        Text(
-                            text = senior.name,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF2C3E50)
-                        )
+                            Text(
+                                text = senior.name,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2C3E50)
+                            )
 
-                        Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
 
-                        // 显示状态标签
-                        if (isPending) {
-                            // Pending状态标签
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = Color(0xFFFEF3C7)
-                            ) {
-                                Text(
-                                    text = "Pending Approval",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFFD97706),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        } else {
-                            // Created/Linked状态标签
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = if (isCreator) Color(0xFFDCFCE7) else Color(0xFFDEEDFF)
-                            ) {
-                                Text(
-                                    text = if (isCreator) "Created" else "Linked",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (isCreator) Color(0xFF16A34A) else Color(0xFF2563EB),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
+                            // 显示状态标签
+                            if (isPending) {
+                                // Pending状态标签
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFFEF3C7)
+                                ) {
+                                    Text(
+                                        text = "Pending Approval",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFFD97706),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            } else {
+                                // Created/Linked状态标签
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isCreator) Color(0xFFDCFCE7) else Color(0xFFDEEDFF)
+                                ) {
+                                    Text(
+                                        text = if (isCreator) "Created" else "Linked",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isCreator) Color(0xFF16A34A) else Color(0xFF2563EB),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
                             }
                         }
                     }

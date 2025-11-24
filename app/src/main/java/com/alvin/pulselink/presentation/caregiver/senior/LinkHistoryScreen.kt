@@ -224,11 +224,11 @@ private fun HistoryCard(item: LinkHistoryItem) {
         else -> Icons.Default.Info
     }
     
-    // Get avatar based on senior info
-    val avatarIcon = if (item.seniorName.isNotEmpty()) {
-        AvatarHelper.getAvatarIcon(item.seniorAvatarType)
+    // Get avatar emoji based on senior info
+    val avatarEmoji = if (item.seniorName.isNotEmpty() && item.seniorAvatarType.isNotEmpty()) {
+        AvatarHelper.getAvatarEmoji(item.seniorAvatarType)
     } else {
-        Icons.Default.Person
+        "🧓" // Default emoji for senior
     }
     
     Card(
@@ -248,20 +248,18 @@ private fun HistoryCard(item: LinkHistoryItem) {
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
-                    // Avatar
-                    Box(
+                    // Avatar emoji
+                    Text(
+                        text = avatarEmoji,
+                        fontSize = 40.sp,
                         modifier = Modifier
-                            .size(48.dp)
-                            .background(statusBgColor, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = avatarIcon,
-                            contentDescription = "Avatar",
-                            modifier = Modifier.size(28.dp),
-                            tint = statusColor
-                        )
-                    }
+                            .size(56.dp)
+                            .background(
+                                color = Color.White,
+                                shape = CircleShape
+                            )
+                            .padding(8.dp)
+                    )
                     
                     Column {
                         Text(

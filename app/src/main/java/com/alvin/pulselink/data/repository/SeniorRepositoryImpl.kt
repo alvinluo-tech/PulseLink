@@ -94,6 +94,11 @@ class SeniorRepositoryImpl @Inject constructor(
                     val healthHistoryMap = doc.get("healthHistory") as? Map<*, *>
                     val bloodPressureMap = healthHistoryMap?.get("bloodPressure") as? Map<*, *>
                     
+                    android.util.Log.d("SeniorRepo", "  - Reading senior: ${doc.getString("name")}")
+                    android.util.Log.d("SeniorRepo", "    healthHistoryMap: $healthHistoryMap")
+                    android.util.Log.d("SeniorRepo", "    bloodPressureMap: $bloodPressureMap")
+                    android.util.Log.d("SeniorRepo", "    heartRate: ${healthHistoryMap?.get("heartRate")}")
+                    
                     // 读取 caregiverRelationships Map
                     val relationshipsMap = doc.get("caregiverRelationships") as? Map<*, *>
                     val caregiverRelationships = relationshipsMap?.mapNotNull { (key, value) ->
@@ -108,7 +113,7 @@ class SeniorRepositoryImpl @Inject constructor(
                         )
                     }?.toMap() ?: emptyMap()
                     
-                    Senior(
+                    val senior = Senior(
                         id = doc.getString("id") ?: "",
                         name = doc.getString("name") ?: "",
                         age = (doc.getLong("age") ?: 0).toInt(),
@@ -137,6 +142,11 @@ class SeniorRepositoryImpl @Inject constructor(
                                 ?.mapNotNull { it as? String } ?: emptyList()
                         )
                     )
+                    
+                    android.util.Log.d("SeniorRepo", "    Parsed BP: ${senior.healthHistory.bloodPressure?.systolic}/${senior.healthHistory.bloodPressure?.diastolic}")
+                    android.util.Log.d("SeniorRepo", "    Parsed HR: ${senior.healthHistory.heartRate}")
+                    
+                    senior
                 } catch (e: Exception) {
                     null
                 }
@@ -492,5 +502,34 @@ class SeniorRepositoryImpl @Inject constructor(
         // 这个方法现在已经不需要了，因为我们使用独立的 linkRequests collection
         // 返回空列表即可
         return Result.success(emptyList())
+    }
+    
+    /**
+     * 根据 seniorId 获取对应的 Firebase Auth UID
+     * 通过查询 users 集合，找到 seniorId 字段匹配的文档
+     */
+    override suspend fun getSeniorAuthUid(seniorId: String): Result<String?> {
+        return try {
+            android.util.Log.d("SeniorRepo", "Getting Auth UID for seniorId: $seniorId")
+            
+            val snapshot = firestore.collection("users")
+                .whereEqualTo("seniorId", seniorId)
+                .limit(1)
+                .get()
+                .await()
+            
+            val uid = snapshot.documents.firstOrNull()?.id
+            
+            if (uid != null) {
+                android.util.Log.d("SeniorRepo", "Found UID: $uid for seniorId: $seniorId")
+            } else {
+                android.util.Log.w("SeniorRepo", "No UID found for seniorId: $seniorId")
+            }
+            
+            Result.success(uid)
+        } catch (e: Exception) {
+            android.util.Log.e("SeniorRepo", "Error getting UID for seniorId $seniorId: ${e.message}", e)
+            Result.failure(e)
+        }
     }
 }

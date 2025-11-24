@@ -53,4 +53,10 @@ interface SeniorRepository {
      * 查询条件：pendingCaregiversIds数组中包含该用户ID的老人
      */
     suspend fun getPendingRequestsByCaregiver(caregiverId: String): Result<List<Senior>>
+    
+    /**
+     * 根据 seniorId 获取对应的 Firebase Auth UID
+     * 用于查询健康数据
+     */
+    suspend fun getSeniorAuthUid(seniorId: String): Result<String?>
 }

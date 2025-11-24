@@ -6,7 +6,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
  * Avatar Helper
- * Provides appropriate avatar icons based on age and gender
+ * Provides appropriate avatar icons/emojis based on age and gender
  */
 object AvatarHelper {
     
@@ -23,7 +23,33 @@ object AvatarHelper {
     }
     
     /**
-     * 根据头像类型获取对应的图标
+     * 根据头像类型获取对应的 Emoji 表情符号
+     * 统一使用 emoji 来显示老人头像，与 Home 页面保持一致
+     */
+    fun getAvatarEmoji(avatarType: String): String {
+        return when (avatarType) {
+            "ELDERLY_MALE" -> "👴"
+            "ELDERLY_FEMALE" -> "👵"
+            "SENIOR_MALE" -> "👨‍🦳"
+            "SENIOR_FEMALE" -> "👩‍🦳"
+            "MIDDLE_AGED_MALE" -> "👨"
+            "MIDDLE_AGED_FEMALE" -> "👩"
+            "ADULT_MALE" -> "👨"
+            "ADULT_FEMALE" -> "👩"
+            else -> "🧓" // 默认老人表情
+        }
+    }
+    
+    /**
+     * 直接根据年龄和性别获取 Emoji（便捷方法）
+     */
+    fun getAvatarEmojiByAgeGender(age: Int, gender: String): String {
+        val avatarType = getAvatarType(age, gender)
+        return getAvatarEmoji(avatarType)
+    }
+    
+    /**
+     * 根据头像类型获取对应的图标（保留用于其他场景）
      * 使用 Material Icons 的不同图标来表示不同年龄段和性别
      */
     fun getAvatarIcon(avatarType: String): ImageVector {

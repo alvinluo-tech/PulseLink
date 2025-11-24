@@ -43,12 +43,13 @@ fun CaregiverProfileScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     
-    // 监听生命周期，当从其他页面返回时刷新待审批数量
+    // 监听生命周期，当从其他页面返回时刷新数据
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshPendingRequestsCount()
+                viewModel.refreshManagedSeniorsData()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
