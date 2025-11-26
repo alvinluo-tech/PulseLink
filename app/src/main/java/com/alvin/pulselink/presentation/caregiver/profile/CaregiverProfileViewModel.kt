@@ -3,12 +3,14 @@ package com.alvin.pulselink.presentation.caregiver.profile
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.alvin.pulselink.data.cache.ManagedSeniorsCache
 import com.alvin.pulselink.data.local.LocalDataSource
 import com.alvin.pulselink.domain.model.SeniorProfile
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.repository.HealthRepository
 import com.alvin.pulselink.domain.repository.CaregiverRelationRepository
 import com.alvin.pulselink.domain.repository.SeniorProfileRepository
+import com.alvin.pulselink.domain.usecase.profile.ManagedSeniorInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,14 +29,14 @@ enum class HealthStatus {
 }
 
 data class CaregiverProfileUiState(
-    val userName: String = "Ms. Li",
-    val managedMembersCount: Int = 4,
-    val goodStatusCount: Int = 2,
-    val attentionCount: Int = 1,
-    val urgentCount: Int = 1,
-    val activeAlertsCount: Int = 2,
+    val userName: String = "",
+    val managedMembersCount: Int = 0,
+    val goodStatusCount: Int = 0,
+    val attentionCount: Int = 0,
+    val urgentCount: Int = 0,
+    val activeAlertsCount: Int = 0,
     val pendingRequestsCount: Int = 0,
-    val isLoading: Boolean = false
+    val isLoading: Boolean = true  // 初始状态为加载中
 )
 
 @HiltViewModel
@@ -43,7 +45,8 @@ class CaregiverProfileViewModel @Inject constructor(
     private val seniorProfileRepository: SeniorProfileRepository,
     private val healthRepository: HealthRepository,
     private val caregiverRelationRepository: CaregiverRelationRepository,
-    private val localDataSource: LocalDataSource
+    private val localDataSource: LocalDataSource,
+    private val managedSeniorsCache: ManagedSeniorsCache
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(CaregiverProfileUiState())
@@ -57,27 +60,23 @@ class CaregiverProfileViewModel @Inject constructor(
     private fun loadProfileData() {
         Log.d("ProfileVM", "========== loadProfileData() STARTED ==========")
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-
-            // 1️⃣ 立即从本地缓存读取 (快速显示)
+            // 1️⃣ 立即从本地缓存读取用户名
             val cachedUser = localDataSource.getUser()
             val cachedName = cachedUser?.second ?: "Caregiver"
 
-            _uiState.update {
-                it.copy(
-                    userName = cachedName,
-                    isLoading = false
-                )
-            }
-            
-            // 2️⃣ 后台静默同步 Firestore (检查更新)
-            syncFromFirestore()
+            // 2️⃣ 加载管理的老人数据并统计健康状态（优先，因为这是主要数据）
+            loadManagedSeniorsData()
             
             // 3️⃣ 加载待审批请求数量
             loadPendingRequestsCount()
             
-            // 4️⃣ 加载管理的老人数据并统计健康状态
-            loadManagedSeniorsData()
+            // 4️⃣ 更新用户名
+            _uiState.update {
+                it.copy(userName = cachedName)
+            }
+            
+            // 5️⃣ 后台静默同步 Firestore (检查更新)
+            syncFromFirestore()
         }
     }
     
@@ -118,112 +117,185 @@ class CaregiverProfileViewModel @Inject constructor(
     private suspend fun loadManagedSeniorsData() {
         try {
             val currentUser = authRepository.getCurrentUser()
-            if (currentUser != null) {
-                Log.d("ProfileVM", "Loading seniors for caregiver: ${currentUser.id}")
+            if (currentUser == null) {
+                Log.w("ProfileVM", "Current user is null")
+                return
+            }
+            
+            val currentUserId = currentUser.id
+            Log.d("ProfileVM", "Loading seniors for caregiver: $currentUserId")
+            
+            // 检查缓存是否有效
+            if (managedSeniorsCache.isCacheValid(currentUserId)) {
+                Log.d("ProfileVM", "Using cached seniors data")
+                val cachedSeniors = managedSeniorsCache.managedSeniors.value
+                updateUIFromCache(cachedSeniors)
+                return
+            }
+            
+            // 缓存无效，从数据库加载（这种情况很少见，因为Dashboard通常会先加载）
+            Log.d("ProfileVM", "Cache invalid, loading from database")
+            
+            // 获取当前用户关联的所有老人资料（通过 caregiver_relations）
+            val relationsResult = caregiverRelationRepository.getActiveRelationsByCaregiver(currentUserId)
+            val relations = relationsResult.getOrNull() ?: emptyList()
+            
+            Log.d("ProfileVM", "Found ${relations.size} active relations")
+            
+            // 获取所有关联老人的 profile
+            val seniorProfiles = mutableListOf<SeniorProfile>()
+            for (relation in relations) {
+                val profileResult = seniorProfileRepository.getProfileById(relation.seniorId)
+                profileResult.getOrNull()?.let { seniorProfiles.add(it) }
+            }
+            
+            Log.d("ProfileVM", "Loaded ${seniorProfiles.size} senior profiles")
+            
+            // 计算管理的老人总数
+            val managedCount = seniorProfiles.size
+            
+            // 分析每个老人的健康状态
+            var goodCount = 0
+            var attentionCount = 0
+            var urgentCount = 0
+            var alertsCount = 0
+            
+            for ((index, profile) in seniorProfiles.withIndex()) {
+                Log.d("ProfileVM", "Analyzing senior ${index + 1}: ${profile.name} (ID: ${profile.id})")
                 
-                // 获取当前用户关联的所有老人资料（通过 caregiver_relations）
-                val relationsResult = caregiverRelationRepository.getActiveRelationsByCaregiver(currentUser.id)
-                val relations = relationsResult.getOrNull() ?: emptyList()
-                
-                Log.d("ProfileVM", "Found ${relations.size} active relations")
-                
-                // 获取所有关联老人的 profile - 使用 buildList 和 suspend 函数
-                val seniorProfiles = mutableListOf<SeniorProfile>()
-                for (relation in relations) {
-                    val profileResult = seniorProfileRepository.getProfileById(relation.seniorId)
-                    profileResult.getOrNull()?.let { seniorProfiles.add(it) }
-                }
-                
-                Log.d("ProfileVM", "Loaded ${seniorProfiles.size} senior profiles")
-                
-                // 计算管理的老人总数
-                val managedCount = seniorProfiles.size
-                
-                // 分析每个老人的健康状态
-                var goodCount = 0
-                var attentionCount = 0
-                var urgentCount = 0
-                var alertsCount = 0
-                
-                for ((index, profile) in seniorProfiles.withIndex()) {
-                    Log.d("ProfileVM", "Analyzing senior ${index + 1}: ${profile.name} (ID: ${profile.id})")
-                    
-                    // 从 health_records 集合读取最新健康数据（使用 seniorId）
-                    val seniorId = profile.id
-                    val healthDataResult = healthRepository.getLatestHealthDataBySeniorUid(seniorId)
+                // 尝试从缓存获取健康摘要
+                val cachedSummary = managedSeniorsCache.getHealthSummary(profile.id)
+                val healthStatus = if (cachedSummary != null) {
+                    Log.d("ProfileVM", "  - Using cached health summary")
+                    analyzeHealthStatusFromSummary(cachedSummary)
+                } else {
+                    // 从数据库读取最新健康数据
+                    val healthDataResult = healthRepository.getLatestHealthDataBySeniorUid(profile.id)
                     val healthData = healthDataResult.getOrNull()
                     
                     if (healthData != null) {
                         Log.d("ProfileVM", "  - Blood Pressure: ${healthData.systolic}/${healthData.diastolic}")
                         Log.d("ProfileVM", "  - Heart Rate: ${healthData.heartRate}")
                         
-                        val healthStatus = analyzeHealthStatusFromData(
+                        analyzeHealthStatusFromData(
                             systolic = healthData.systolic,
                             diastolic = healthData.diastolic,
                             heartRate = healthData.heartRate
                         )
-                        Log.d("ProfileVM", "  - Health Status: $healthStatus")
-                        
-                        when (healthStatus) {
-                            HealthStatus.GOOD -> goodCount++
-                            HealthStatus.ATTENTION -> {
-                                attentionCount++
-                                alertsCount++
-                            }
-                            HealthStatus.URGENT -> {
-                                urgentCount++
-                                alertsCount++
-                            }
-                        }
                     } else {
                         Log.d("ProfileVM", "  - No health data found, marking as GOOD")
-                        goodCount++  // 没有数据时默认为 GOOD
+                        HealthStatus.GOOD
                     }
                 }
                 
-                Log.d("ProfileVM", "Summary: Good=$goodCount, Attention=$attentionCount, Urgent=$urgentCount, Alerts=$alertsCount")
+                Log.d("ProfileVM", "  - Health Status: $healthStatus")
                 
-                _uiState.update {
-                    it.copy(
-                        managedMembersCount = managedCount,
-                        goodStatusCount = goodCount,
-                        attentionCount = attentionCount,
-                        urgentCount = urgentCount,
-                        activeAlertsCount = alertsCount
-                    )
+                when (healthStatus) {
+                    HealthStatus.GOOD -> goodCount++
+                    HealthStatus.ATTENTION -> {
+                        attentionCount++
+                        alertsCount++
+                    }
+                    HealthStatus.URGENT -> {
+                        urgentCount++
+                        alertsCount++
+                    }
                 }
-            } else {
-                Log.w("ProfileVM", "Current user is null")
+            }
+            
+            Log.d("ProfileVM", "Summary: Good=$goodCount, Attention=$attentionCount, Urgent=$urgentCount, Alerts=$alertsCount")
+            
+            _uiState.update {
+                it.copy(
+                    managedMembersCount = managedCount,
+                    goodStatusCount = goodCount,
+                    attentionCount = attentionCount,
+                    urgentCount = urgentCount,
+                    activeAlertsCount = alertsCount,
+                    isLoading = false  // 数据加载完成
+                )
             }
         } catch (e: Exception) {
             Log.e("ProfileVM", "Exception loading seniors: ${e.message}", e)
-            // 异常时保持默认值
-            _uiState.update {
-                it.copy(
-                    managedMembersCount = 0,
-                    goodStatusCount = 0,
-                    attentionCount = 0,
-                    urgentCount = 0,
-                    activeAlertsCount = 0
-                )
+            // 异常时也要设置为非加载状态
+            _uiState.update { it.copy(isLoading = false) }
+        }
+    }
+    
+    /**
+     * 从缓存更新UI
+     */
+    private fun updateUIFromCache(cachedSeniors: List<ManagedSeniorInfo>) {
+        val managedCount = cachedSeniors.size
+        
+        var goodCount = 0
+        var attentionCount = 0
+        var urgentCount = 0
+        var alertsCount = 0
+        
+        for (info in cachedSeniors) {
+            val cachedSummary = managedSeniorsCache.getHealthSummary(info.profile.id)
+            val healthStatus = if (cachedSummary != null && info.canViewHealthData) {
+                analyzeHealthStatusFromSummary(cachedSummary)
+            } else {
+                HealthStatus.GOOD
+            }
+            
+            when (healthStatus) {
+                HealthStatus.GOOD -> goodCount++
+                HealthStatus.ATTENTION -> {
+                    attentionCount++
+                    alertsCount++
+                }
+                HealthStatus.URGENT -> {
+                    urgentCount++
+                    alertsCount++
+                }
             }
         }
+        
+        _uiState.update {
+            it.copy(
+                managedMembersCount = managedCount,
+                goodStatusCount = goodCount,
+                attentionCount = attentionCount,
+                urgentCount = urgentCount,
+                activeAlertsCount = alertsCount,
+                isLoading = false  // 缓存数据加载完成
+            )
+        }
+    }
+    
+    /**
+     * 从HealthSummary分析健康状态
+     */
+    private fun analyzeHealthStatusFromSummary(summary: com.alvin.pulselink.domain.model.HealthSummary): HealthStatus {
+        val systolic = summary.latestSystolic
+        val diastolic = summary.latestDiastolic
+        val heartRate = summary.latestHeartRateValue
+        
+        return analyzeHealthStatusFromData(systolic, diastolic, heartRate)
     }
     
     /**
      * 分析健康状态（从健康数据直接分析）
      */
-    private fun analyzeHealthStatusFromData(systolic: Int, diastolic: Int, heartRate: Int): HealthStatus {
+    private fun analyzeHealthStatusFromData(systolic: Int?, diastolic: Int?, heartRate: Int?): HealthStatus {
+        // 如果没有数据，返回GOOD状态
+        if (systolic == null && diastolic == null && heartRate == null) {
+            return HealthStatus.GOOD
+        }
+        
         Log.d("ProfileVM", "    BP Analysis: systolic=$systolic, diastolic=$diastolic")
         Log.d("ProfileVM", "    HR Analysis: $heartRate bpm")
         
         // 检查血压
         val bpStatus = when {
-            systolic > 160 || diastolic > 100 -> {
+            systolic != null && diastolic != null && (systolic > 160 || diastolic > 100) -> {
                 Log.d("ProfileVM", "    BP Status: URGENT")
                 HealthStatus.URGENT
             }
-            systolic > 140 || diastolic > 90 -> {
+            systolic != null && diastolic != null && (systolic > 140 || diastolic > 90) -> {
                 Log.d("ProfileVM", "    BP Status: ATTENTION")
                 HealthStatus.ATTENTION
             }
@@ -235,11 +307,11 @@ class CaregiverProfileViewModel @Inject constructor(
         
         // 检查心率
         val hrStatus = when {
-            heartRate > 120 || heartRate < 50 -> {
+            heartRate != null && (heartRate > 120 || heartRate < 50) -> {
                 Log.d("ProfileVM", "    HR Status: URGENT")
                 HealthStatus.URGENT
             }
-            heartRate > 100 || heartRate < 60 -> {
+            heartRate != null && (heartRate > 100 || heartRate < 60) -> {
                 Log.d("ProfileVM", "    HR Status: ATTENTION")
                 HealthStatus.ATTENTION
             }

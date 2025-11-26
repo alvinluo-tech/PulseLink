@@ -40,11 +40,15 @@ class HomeViewModel @Inject constructor(
             // 优先读取本地会话（虚拟ID登录时保存了 Senior.name）
             val local = localDataSource.getUser()
             val localName = if (local?.third == "senior") local.second else null
+            val localId = local?.first ?: ""  // 获取 Senior ID
 
             val displayName = localName ?: "User"
 
             _uiState.update {
-                it.copy(username = displayName)
+                it.copy(
+                    username = displayName,
+                    seniorId = localId
+                )
             }
         }
     }

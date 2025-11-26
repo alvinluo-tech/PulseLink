@@ -19,3 +19,11 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+
+# 保持 Firebase 相关类不被混淆
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.gms.** { *; }
+
+# 如果你用了自定义的数据模型传给 Firestore，也要保持它们
+-keepclassmembers class com.alvin.pulselink.domain.model.** { *; }

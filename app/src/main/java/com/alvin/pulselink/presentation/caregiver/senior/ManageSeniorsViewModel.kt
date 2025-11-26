@@ -5,6 +5,8 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.domain.model.CaregiverRelation
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import com.alvin.pulselink.domain.model.SeniorProfile
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.usecase.profile.CreateSeniorProfileUseCase
@@ -55,6 +57,33 @@ class ManageSeniorsViewModel @Inject constructor(
     
     private val _createFormState = MutableStateFlow(CreateSeniorFormState())
     val createFormState: StateFlow<CreateSeniorFormState> = _createFormState.asStateFlow()
+    
+    // Channel for one-time UI events (success, navigation)
+    private val _uiEvent = Channel<UiEvent>()
+    val uiEvent = _uiEvent.receiveAsFlow()
+    
+    // StateFlow for error dialog (must be confirmed by user)
+    private val _errorDialog = MutableStateFlow<ErrorDialogState?>(null)
+    val errorDialog: StateFlow<ErrorDialogState?> = _errorDialog.asStateFlow()
+    
+    /**
+     * UI事件（一次性消息：成功提示、导航等）
+     */
+    sealed class UiEvent {
+        data class ShowSnackbar(val message: String) : UiEvent()
+    }
+    
+    /**
+     * 错误对话框状态（必须用户确认）
+     */
+    data class ErrorDialogState(
+        val title: String,
+        val message: String
+    )
+    
+    fun dismissErrorDialog() {
+        _errorDialog.value = null
+    }
 
     init {
         loadSeniors()
@@ -141,6 +170,10 @@ class ManageSeniorsViewModel @Inject constructor(
         _createFormState.update { it.copy(gender = gender) }
     }
     
+    fun onCreatorNameChanged(name: String) {
+        _createFormState.update { it.copy(creatorName = name, creatorNameError = null) }
+    }
+    
     fun onRelationshipChanged(relationship: String, gender: String) {
         // 自动设置默认 nickname
         val defaultNickname = RelationshipHelper.getDefaultAddressTitle(relationship, gender)
@@ -174,14 +207,23 @@ class ManageSeniorsViewModel @Inject constructor(
             hasError = true
         }
         
+        if (state.creatorName.isBlank()) {
+            _createFormState.update { it.copy(creatorNameError = "请输入您的姓名") }
+            hasError = true
+        }
+        
         if (hasError) return
         
         viewModelScope.launch {
-            _createFormState.update { it.copy(isLoading = true, errorMessage = null) }
+            _createFormState.update { it.copy(isLoading = true) }
             
             val caregiverId = authRepository.getCurrentUid()
             if (caregiverId.isNullOrBlank()) {
-                _createFormState.update { it.copy(isLoading = false, errorMessage = "未登录") }
+                _createFormState.update { it.copy(isLoading = false) }
+                _errorDialog.value = ErrorDialogState(
+                    title = "Not Logged In",
+                    message = "Please log in to create a senior account."
+                )
                 return@launch
             }
             
@@ -200,6 +242,7 @@ class ManageSeniorsViewModel @Inject constructor(
                 avatarType = avatarType,
                 creatorId = caregiverId,
                 customPassword = null,
+                caregiverName = state.creatorName,
                 relationship = state.relationship,
                 nickname = finalNickname  // 确保使用有值的 nickname
             ).onSuccess { result ->
@@ -213,30 +256,27 @@ class ManageSeniorsViewModel @Inject constructor(
                         createdEmail = result.email,
                         createdPassword = result.password,
                         qrCodeData = result.qrCodeData,
-                        qrCodeBitmap = qrBitmap,
-                        errorMessage = null  // 清除错误消息
+                        qrCodeBitmap = qrBitmap
                     )
                 }
                 
                 // 刷新列表
                 loadSeniors()
                 
-                // 提示消息
-                _uiState.update { 
-                    it.copy(
-                        successMessage = "老人账户创建成功！\n邮箱: ${result.email}\n密码: ${result.password}",
-                        errorMessage = null  // 清除错误消息
-                    )
-                }
+                // 发送成功通知到Channel（Snackbar）
+                _uiEvent.send(UiEvent.ShowSnackbar(
+                    "Senior account created successfully!\nEmail: ${result.email}\nPassword: ${result.password}"
+                ))
                 
                 onSuccess()
             }.onFailure { error ->
-                _createFormState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = error.message ?: "创建失败"
-                    )
-                }
+                _createFormState.update { it.copy(isLoading = false) }
+                
+                // 显示错误对话框（StateFlow）
+                _errorDialog.value = ErrorDialogState(
+                    title = "Creation Failed",
+                    message = error.message ?: "Failed to create senior account. Please try again."
+                )
             }
         }
     }
@@ -289,27 +329,24 @@ class ManageSeniorsViewModel @Inject constructor(
             
             deleteSeniorProfileUseCase(seniorProfileId, requesterId)
                 .onSuccess {
-                    _uiState.update { it.copy(
-                        successMessage = "已删除老人账户",
-                        isLoading = false
-                    ) }
+                    _uiState.update { it.copy(isLoading = false) }
+                    _uiEvent.send(UiEvent.ShowSnackbar("Successfully deleted senior account"))
                     loadSeniors()
                 }
                 .onFailure { e ->
                     // 解析错误消息，提供友好提示
-                    val errorMsg = when {
-                        e.message?.contains("无法删除") == true && e.message?.contains("其他护理者") == true -> 
-                            e.message // Cloud Function 返回的详细消息
+                    val (title, message) = when {
+                        e.message?.contains("无法删除") == true && e.message?.contains("其他护理者") == true -> {
+                            "Cannot Delete" to (e.message ?: "Unable to delete: There are other caregivers linked to this senior")
+                        }
                         e.message?.contains("permission-denied") == true || e.message?.contains("只有创建者") == true ->
-                            "只有创建者才能删除账号"
+                            "Permission Denied" to "Only the creator can delete this account"
                         e.message?.contains("not-found") == true ->
-                            "老人资料不存在"
-                        else -> e.message ?: "删除失败"
+                            "Not Found" to "Senior profile not found"
+                        else -> "Delete Failed" to (e.message ?: "Failed to delete")
                     }
-                    _uiState.update { it.copy(
-                        errorMessage = errorMsg,
-                        isLoading = false
-                    ) }
+                    _uiState.update { it.copy(isLoading = false) }
+                    _errorDialog.value = ErrorDialogState(title, message)
                 }
         }
     }
@@ -329,7 +366,7 @@ class ManageSeniorsViewModel @Inject constructor(
             
             deleteSeniorProfileUseCase(seniorProfileId, requesterId)
                 .onSuccess {
-                    _uiState.update { it.copy(successMessage = "已删除老人账户", isLoading = false) }
+                    _uiState.update { it.copy(isLoading = false) }
                     loadSeniors()
                 }
                 .onFailure { e ->
@@ -341,20 +378,58 @@ class ManageSeniorsViewModel @Inject constructor(
     /**
      * 解除关系
      */
-    fun unlinkSenior(seniorProfileId: String) {
+    /**
+     * 显示 unlink 确认对话框
+     */
+    fun showUnlinkConfirmation(seniorInfo: ManagedSeniorInfo) {
+        _uiState.update { 
+            it.copy(
+                showUnlinkConfirmDialog = true,
+                seniorToUnlink = seniorInfo
+            )
+        }
+    }
+    
+    /**
+     * 取消 unlink
+     */
+    fun cancelUnlink() {
+        _uiState.update { 
+            it.copy(
+                showUnlinkConfirmDialog = false,
+                seniorToUnlink = null
+            )
+        }
+    }
+    
+    /**
+     * 执行 unlink（用户确认后）
+     */
+    fun executeUnlinkSenior(seniorProfileId: String) {
+        // 立即关闭对话框
+        _uiState.update { it.copy(
+            showUnlinkConfirmDialog = false,
+            seniorToUnlink = null
+        ) }
+        
         viewModelScope.launch {
             val caregiverId = authRepository.getCurrentUid() ?: return@launch
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoading = true) }
             
             val relationId = CaregiverRelation.generateId(caregiverId, seniorProfileId)
             
             manageRelationUseCase.removeRelation(relationId, caregiverId)
                 .onSuccess {
-                    _uiState.update { it.copy(successMessage = "已解除绑定", isLoading = false) }
+                    _uiState.update { it.copy(isLoading = false) }
+                    _uiEvent.send(UiEvent.ShowSnackbar("Successfully unlinked from senior account"))
                     loadSeniors()
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(errorMessage = e.message ?: "解除绑定失败", isLoading = false) }
+                    _uiState.update { it.copy(isLoading = false) }
+                    _errorDialog.value = ErrorDialogState(
+                        title = "Unlink Failed",
+                        message = e.message ?: "Failed to unlink from senior account. Please try again."
+                    )
                 }
         }
     }
@@ -438,13 +513,8 @@ class ManageSeniorsViewModel @Inject constructor(
         }
     }
 
-    fun clearSuccessMessage() {
-        _uiState.update { it.copy(successMessage = null) }
-    }
-
     fun clearErrorMessage() {
         _uiState.update { it.copy(errorMessage = null) }
-        _createFormState.update { it.copy(errorMessage = null) }
     }
     
     /**
@@ -476,11 +546,12 @@ data class ManageSeniorsUiState(
     val linkedSeniors: List<ManagedSeniorInfo> = emptyList(),
     val pendingRequests: List<CaregiverRelation> = emptyList(),
     val isLoading: Boolean = false,
-    val errorMessage: String? = null,
-    val successMessage: String? = null,
+    val errorMessage: String? = null,  // Keep for loading errors
     val currentUserId: String = "",
     val showDeleteConfirmDialog: Boolean = false,
-    val seniorToDelete: ManagedSeniorInfo? = null
+    val seniorToDelete: ManagedSeniorInfo? = null,
+    val showUnlinkConfirmDialog: Boolean = false,
+    val seniorToUnlink: ManagedSeniorInfo? = null
 )
 
 /**
@@ -490,13 +561,14 @@ data class CreateSeniorFormState(
     val name: String = "",
     val age: String = "",
     val gender: String = "Male",
+    val creatorName: String = "",  // Caregiver's actual name
     val relationship: String = "Son",  // Caregiver's relationship to senior
     val nickname: String = "",  // Caregiver's nickname for senior (e.g., "Dad", "Mom")
     val isLoading: Boolean = false,
     val isSuccess: Boolean = false,
-    val errorMessage: String? = null,
     val nameError: String? = null,
     val ageError: String? = null,
+    val creatorNameError: String? = null,
     // 创建成功后的账户信息
     val createdEmail: String = "",
     val createdPassword: String = "",

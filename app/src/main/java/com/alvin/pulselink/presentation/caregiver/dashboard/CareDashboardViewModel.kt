@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.domain.model.HealthSummary
 import com.alvin.pulselink.domain.model.SeniorProfile
+import com.alvin.pulselink.data.cache.ManagedSeniorsCache
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.usecase.health.GetHealthRecordsUseCase
 import com.alvin.pulselink.domain.usecase.profile.GetManagedSeniorsUseCase
@@ -31,7 +32,8 @@ import javax.inject.Inject
 class CareDashboardViewModel @Inject constructor(
     private val getManagedSeniorsUseCase: GetManagedSeniorsUseCase,
     private val getHealthRecordsUseCase: GetHealthRecordsUseCase,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val managedSeniorsCache: ManagedSeniorsCache
 ) : ViewModel() {
 
     companion object {
@@ -49,27 +51,43 @@ class CareDashboardViewModel @Inject constructor(
     /**
      * 加载仪表盘数据
      */
-    fun loadDashboard() {
+    fun loadDashboard(forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            
             val currentUserId = authRepository.getCurrentUid()
             if (currentUserId.isNullOrBlank()) {
                 _uiState.update { it.copy(isLoading = false, errorMessage = "未登录") }
                 return@launch
             }
             
-            Log.d(TAG, "========== loadDashboard() for caregiver: $currentUserId ==========")
+            Log.d(TAG, "========== loadDashboard() for caregiver: $currentUserId (forceRefresh: $forceRefresh) ==========")
+            
+            // 检查缓存是否有效
+            if (!forceRefresh && managedSeniorsCache.isCacheValid(currentUserId)) {
+                Log.d(TAG, "Using cached data")
+                val cachedSeniors = managedSeniorsCache.managedSeniors.value
+                updateUIFromCache(cachedSeniors, currentUserId)
+                return@launch
+            }
+            
+            // 缓存无效或强制刷新，从数据库加载
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             
             // 1. 获取管理的老人列表
             getManagedSeniorsUseCase(currentUserId)
                 .onSuccess { managedSeniors ->
                     Log.d(TAG, "Found ${managedSeniors.size} managed seniors")
                     
+                    // 更新缓存
+                    managedSeniorsCache.updateCache(currentUserId, managedSeniors)
+                    
                     // 2. 为每个老人获取健康摘要并转换为 LovedOne
+                    val healthSummaries = mutableMapOf<String, HealthSummary>()
                     val lovedOnes = managedSeniors.map { info ->
-                        convertToLovedOne(info, currentUserId)
+                        convertToLovedOne(info, currentUserId, healthSummaries)
                     }
+                    
+                    // 批量更新健康摘要缓存
+                    managedSeniorsCache.updateHealthSummaries(healthSummaries)
                     
                     _uiState.update {
                         it.copy(
@@ -96,13 +114,34 @@ class CareDashboardViewModel @Inject constructor(
                 }
         }
     }
+    
+    /**
+     * 从缓存更新UI
+     */
+    private suspend fun updateUIFromCache(cachedSeniors: List<ManagedSeniorInfo>, currentUserId: String) {
+        val lovedOnes = cachedSeniors.map { info ->
+            val cachedSummary = managedSeniorsCache.getHealthSummary(info.profile.id)
+            convertToLovedOneWithCachedSummary(info, currentUserId, cachedSummary)
+        }
+        
+        _uiState.update {
+            it.copy(
+                lovedOnes = lovedOnes,
+                goodCount = lovedOnes.count { it.status == HealthStatus.GOOD },
+                attentionCount = lovedOnes.count { it.status == HealthStatus.ATTENTION },
+                urgentCount = lovedOnes.count { it.status == HealthStatus.URGENT },
+                isLoading = false
+            )
+        }
+    }
 
     /**
-     * 将 ManagedSeniorInfo 转换为 LovedOne
+     * 将 ManagedSeniorInfo 转换为 LovedOne（从数据库获取健康数据）
      */
     private suspend fun convertToLovedOne(
         info: ManagedSeniorInfo,
-        currentUserId: String
+        currentUserId: String,
+        healthSummaries: MutableMap<String, HealthSummary>
     ): LovedOne {
         val profile = info.profile
         val relation = info.relation
@@ -120,7 +159,77 @@ class CareDashboardViewModel @Inject constructor(
         
         // 获取健康状态（如果有权限）
         val healthStatus = if (info.canViewHealthData) {
-            getHealthStatusForSenior(profile.id, currentUserId)
+            // 获取健康摘要
+            val summaryResult = getHealthRecordsUseCase.getHealthSummary(profile.id, currentUserId)
+            summaryResult.fold(
+                onSuccess = { summary ->
+                    // 保存到批量更新Map
+                    healthSummaries[profile.id] = summary
+                    analyzeHealthSummary(summary)
+                },
+                onFailure = { error ->
+                    Log.w(TAG, "Failed to get health summary for ${profile.id}: ${error.message}")
+                    HealthStatusInfo(
+                        status = HealthStatus.GOOD,
+                        message = "No health data available",
+                        color = Color(0xFF10B981)
+                    )
+                }
+            )
+        } else {
+            HealthStatusInfo(
+                status = HealthStatus.GOOD,
+                message = "No permission to view health data",
+                color = Color.Gray
+            )
+        }
+        
+        return LovedOne(
+            id = profile.id,
+            name = profile.name,
+            nickname = relation.nickname,
+            relationship = relationshipText,
+            emoji = emoji,
+            status = healthStatus.status,
+            statusMessage = healthStatus.message,
+            statusColor = healthStatus.color,
+            borderColor = healthStatus.color
+        )
+    }
+    
+    /**
+     * 将 ManagedSeniorInfo 转换为 LovedOne（使用缓存的健康数据）
+     */
+    private suspend fun convertToLovedOneWithCachedSummary(
+        info: ManagedSeniorInfo,
+        currentUserId: String,
+        cachedSummary: HealthSummary?
+    ): LovedOne {
+        val profile = info.profile
+        val relation = info.relation
+        
+        // 获取头像 emoji
+        val emoji = AvatarHelper.getAvatarEmoji(profile.avatarType)
+        
+        // 获取关系类型
+        val relationshipText = when (relation.relationship) {
+            "PRIMARY_CAREGIVER" -> "主要监护人"
+            "CAREGIVER" -> "监护人"
+            "FAMILY" -> "家属"
+            else -> "监护人"
+        }
+        
+        // 获取健康状态
+        val healthStatus = if (info.canViewHealthData) {
+            if (cachedSummary != null) {
+                analyzeHealthSummary(cachedSummary)
+            } else {
+                // 缓存没有，重新获取
+                getHealthStatusForSenior(profile.id, currentUserId).also {
+                    // 这里我们只有HealthStatusInfo，无法更新缓存的HealthSummary
+                    // 实际使用中，缓存应该总是有效的
+                }
+            }
         } else {
             HealthStatusInfo(
                 status = HealthStatus.GOOD,

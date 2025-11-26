@@ -46,6 +46,7 @@ class CreateSeniorProfileUseCase @Inject constructor(
         avatarType: String = "GRANDFATHER",
         creatorId: String,
         customPassword: String? = null,
+        caregiverName: String = "",
         relationship: String = "Son",
         nickname: String = ""
     ): Result<SeniorProfileResult> {
@@ -118,6 +119,7 @@ class CreateSeniorProfileUseCase @Inject constructor(
                 status = CaregiverRelation.STATUS_ACTIVE,
                 relationship = relationship,  // Use provided relationship
                 nickname = nickname,  // Use provided nickname
+                caregiverName = caregiverName,  // Creator's name
                 canViewHealthData = true,
                 canEditHealthData = true,
                 canViewReminders = true,

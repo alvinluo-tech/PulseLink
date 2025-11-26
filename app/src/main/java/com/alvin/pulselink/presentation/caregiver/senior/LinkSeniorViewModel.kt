@@ -9,10 +9,13 @@ import com.alvin.pulselink.domain.model.SeniorProfile
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.repository.CaregiverRelationRepository
 import com.alvin.pulselink.domain.repository.SeniorProfileRepository
+import com.alvin.pulselink.util.RelationshipHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -29,6 +32,14 @@ class LinkSeniorViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(LinkSeniorUiState())
     val uiState: StateFlow<LinkSeniorUiState> = _uiState.asStateFlow()
+    
+    // Channel for one-time events (success Snackbar)
+    private val _uiEvent = Channel<UiEvent>()
+    val uiEvent = _uiEvent.receiveAsFlow()
+    
+    // StateFlow for error dialogs (persists across config changes)
+    private val _errorDialog = MutableStateFlow<ErrorDialogState?>(null)
+    val errorDialogState: StateFlow<ErrorDialogState?> = _errorDialog.asStateFlow()
 
     init {
         loadLinkedSeniors()
@@ -153,6 +164,18 @@ class LinkSeniorViewModel @Inject constructor(
             errorMessage = null
         ) }
     }
+    
+    fun onSeniorIdChangedAndSearch(id: String) {
+        _uiState.update { it.copy(
+            seniorId = id.uppercase().trim(),
+            seniorIdError = null,
+            errorMessage = null
+        ) }
+        // Auto search after setting ID (for QR code scanning)
+        if (id.trim().isNotEmpty() && id.trim().matches(AuthConstants.SNR_ID_REGEX)) {
+            searchSenior()
+        }
+    }
 
     fun onRelationshipChanged(relationship: String) {
         _uiState.update { it.copy(
@@ -251,6 +274,11 @@ class LinkSeniorViewModel @Inject constructor(
             
             val caregiverId = authRepository.getCurrentUid() ?: ""
             
+            // 如果nickname为空，使用默认值
+            val finalNickname = nickname.ifBlank {
+                RelationshipHelper.getDefaultAddressTitle(relationship, profile.gender)
+            }
+            
             // 创建关系请求
             val relation = CaregiverRelation(
                 id = CaregiverRelation.generateId(caregiverId, profile.id),
@@ -258,7 +286,8 @@ class LinkSeniorViewModel @Inject constructor(
                 seniorId = profile.id,
                 status = "pending",
                 relationship = relationship,
-                nickname = nickname,
+                nickname = finalNickname,  // 使用finalNickname确保始终有值
+                caregiverName = _uiState.value.caregiverName,  // 护理者的真实姓名
                 message = _uiState.value.message,
                 canViewHealthData = true,
                 canEditHealthData = false,
@@ -277,13 +306,19 @@ class LinkSeniorViewModel @Inject constructor(
                         isLinking = false,
                         isSuccess = true
                     ) }
+                    
+                    // Send success Snackbar via Channel
+                    _uiEvent.send(UiEvent.ShowSnackbar("Link request sent successfully! Waiting for senior approval."))
                 }
                 .onFailure { error ->
                     Log.e("LinkSeniorVM", "Failed to create link request: ${error.message}", error)
-                    _uiState.update { it.copy(
-                        isLinking = false,
-                        errorMessage = error.message ?: "Failed to send link request"
-                    ) }
+                    _uiState.update { it.copy(isLinking = false) }
+                    
+                    // Show error dialog via StateFlow
+                    _errorDialog.value = ErrorDialogState(
+                        title = "Link Request Failed",
+                        message = error.message ?: "Failed to send link request. Please try again."
+                    )
                 }
         }
     }
@@ -326,4 +361,26 @@ class LinkSeniorViewModel @Inject constructor(
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
     }
+    
+    /**
+     * 关闭错误对话框
+     */
+    fun dismissErrorDialog() {
+        _errorDialog.value = null
+    }
 }
+
+/**
+ * UI Events (one-time events via Channel)
+ */
+sealed class UiEvent {
+    data class ShowSnackbar(val message: String) : UiEvent()
+}
+
+/**
+ * Error Dialog State (persisted via StateFlow)
+ */
+data class ErrorDialogState(
+    val title: String,
+    val message: String
+)

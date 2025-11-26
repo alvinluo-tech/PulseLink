@@ -312,9 +312,9 @@ private fun LovedOneCard(
             Spacer(modifier = Modifier.width(16.dp))
             
             Column(modifier = Modifier.weight(1f)) {
-                // Display name: nickname(老人名)
+                // Display name: 老人名字(nickname)
                 Text(
-                    text = "${lovedOne.nickname}(${lovedOne.name})",
+                    text = "${lovedOne.name} (${lovedOne.nickname})",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF2C3E50)

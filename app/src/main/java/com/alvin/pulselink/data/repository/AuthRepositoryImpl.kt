@@ -33,13 +33,24 @@ class AuthRepositoryImpl @Inject constructor(
                 email
             }
             
-            android.util.Log.d("AuthRepo", "Login with: input=$email, converted=$loginEmail")
+            android.util.Log.d("AuthRepo", "Login attempt: input=$email, converted=$loginEmail")
             
             // 登录阶段设置总体超时，避免网络问题导致长时间卡住
-            val authResult = withTimeout(15_000) {
-                firebaseAuth.signInWithEmailAndPassword(loginEmail, password).await()
+            val authResult = try {
+                withTimeout(15_000) {
+                    firebaseAuth.signInWithEmailAndPassword(loginEmail, password).await()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("AuthRepo", "Firebase Auth login failed", e)
+                // 检查是否是 reCAPTCHA 相关错误
+                if (e.message?.contains("CAPTCHA", ignoreCase = true) == true ||
+                    e.message?.contains("reCAPTCHA", ignoreCase = true) == true) {
+                    throw Exception("Security verification required. Please try again or contact support. (reCAPTCHA)")
+                }
+                throw e
             }
-            val user = authResult.user ?: throw Exception("Login failed")
+            
+            val user = authResult.user ?: throw Exception("Login failed: No user returned")
             
             // 从 displayName 中解析用户名和角色
             val displayName = user.displayName ?: "User|SENIOR"

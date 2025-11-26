@@ -17,6 +17,7 @@ data class CaregiverRelation(
     // 关系信息
     val relationship: String = "",          // 护理者是老人的什么 (例如: "Son", "Daughter")
     val nickname: String = "",              // 护理者对老人的称呼 (例如: "Dad", "Mom")
+    val caregiverName: String = "",         // 护理者的真实姓名 (申请时填写的 "Your Name")
     
     // 状态管理
     val status: String = STATUS_PENDING,    // pending/active/rejected

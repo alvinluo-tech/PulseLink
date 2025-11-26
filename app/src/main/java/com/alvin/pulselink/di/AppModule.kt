@@ -38,7 +38,18 @@ object AppModule {
     @Provides
     @Singleton
     fun provideFirebaseAuth(): FirebaseAuth {
-        return FirebaseAuth.getInstance()
+        val auth = FirebaseAuth.getInstance()
+        
+        // 在开发环境中禁用应用验证，避免 reCAPTCHA 问题
+        // 注意：仅在调试模式下使用
+        try {
+            auth.firebaseAuthSettings.setAppVerificationDisabledForTesting(true)
+            android.util.Log.d("AppModule", "Firebase Auth: App verification disabled for testing")
+        } catch (e: Exception) {
+            android.util.Log.w("AppModule", "Failed to disable app verification: ${e.message}")
+        }
+        
+        return auth
     }
     
     /**

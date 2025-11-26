@@ -18,8 +18,8 @@ data class LinkSeniorUiState(
     val caregiverNameError: String? = null,
     val message: String = "",
     val isLinking: Boolean = false,
-    val errorMessage: String? = null,
-    val isSuccess: Boolean = false,
+    val errorMessage: String? = null,  // Keep for loading errors (not user actions)
+    val isSuccess: Boolean = false,  // Keep for form reset logic
     val linkedSeniors: List<SeniorProfile> = emptyList(),
     val isLoadingList: Boolean = false,
     val showNotFoundDialog: Boolean = false,

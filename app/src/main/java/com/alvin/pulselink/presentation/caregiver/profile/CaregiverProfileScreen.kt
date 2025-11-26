@@ -122,7 +122,11 @@ fun CaregiverProfileScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     
                     Text(
-                        text = "Caregiver Account · Managing\n${uiState.managedMembersCount} members",
+                        text = if (uiState.isLoading) {
+                            "Caregiver Account · Loading..."
+                        } else {
+                            "Caregiver Account · Managing\n${uiState.managedMembersCount} members"
+                        },
                         fontSize = 16.sp,
                         color = Color.White.copy(alpha = 0.9f),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -163,13 +167,15 @@ fun CaregiverProfileScreen(
                             count = uiState.goodStatusCount,
                             label = "Good Status",
                             color = Color(0xFF10B981),
-                            icon = Icons.Default.Check
+                            icon = Icons.Default.Check,
+                            isLoading = uiState.isLoading
                         )
                         OverviewItem(
                             count = uiState.attentionCount,
                             label = "Need Attention",
                             color = Color(0xFFF59E0B),
-                            icon = Icons.Default.Warning
+                            icon = Icons.Default.Warning,
+                            isLoading = uiState.isLoading
                         )
                     }
                     
@@ -183,13 +189,15 @@ fun CaregiverProfileScreen(
                             count = uiState.urgentCount,
                             label = "Urgent",
                             color = Color(0xFFEF4444),
-                            icon = Icons.Default.Warning
+                            icon = Icons.Default.Warning,
+                            isLoading = uiState.isLoading
                         )
                         OverviewItem(
                             count = uiState.activeAlertsCount,
                             label = "Active Alerts",
-                            color = Color(0xFF9333EA),
-                            icon = Icons.Default.Notifications
+                            color = Color(0xFF8B5CF6),
+                            icon = Icons.Default.Notifications,
+                            isLoading = uiState.isLoading
                         )
                     }
                 }
@@ -294,7 +302,8 @@ private fun OverviewItem(
     count: Int,
     label: String,
     color: Color,
-    icon: ImageVector
+    icon: ImageVector,
+    isLoading: Boolean = false
 ) {
     Column(
         modifier = Modifier
@@ -314,7 +323,7 @@ private fun OverviewItem(
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = count.toString(),
+            text = if (isLoading) "-" else count.toString(),
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF2C3E50)

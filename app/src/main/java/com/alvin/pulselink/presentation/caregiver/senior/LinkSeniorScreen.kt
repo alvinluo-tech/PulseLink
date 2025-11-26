@@ -30,9 +30,11 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alvin.pulselink.domain.model.SeniorProfile
+import com.alvin.pulselink.presentation.common.components.QRCodeScannerDialog
 import com.alvin.pulselink.util.AvatarHelper
 import com.alvin.pulselink.util.RelationshipHelper
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 /**
  * Link Senior Account Screen
@@ -47,6 +49,7 @@ fun LinkSeniorScreen(
     onNavigateToHistory: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val errorDialogState by viewModel.errorDialogState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var showLinkForm by remember { mutableStateOf(false) }
     
@@ -61,15 +64,17 @@ fun LinkSeniorScreen(
             showLinkForm = false  // Close link form
             viewModel.resetLinkForm()  // Reset state
             viewModel.loadLinkedSeniors()  // Reload list
-            snackbarHostState.showSnackbar("Link request sent! Check history for status.")
         }
     }
     
-    // Listen for errors
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.clearError()
+    // Collect UiEvent from Channel (success Snackbar)
+    LaunchedEffect(Unit) {
+        viewModel.uiEvent.collect { event ->
+            when (event) {
+                is com.alvin.pulselink.presentation.caregiver.senior.UiEvent.ShowSnackbar -> {
+                    snackbarHostState.showSnackbar(event.message)
+                }
+            }
         }
     }
     
@@ -138,6 +143,41 @@ fun LinkSeniorScreen(
                 else -> LinkedSeniorsList(uiState.linkedSeniors)
             }
         }
+    }
+    
+    // Error Dialog (from StateFlow)
+    errorDialogState?.let { dialogState ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissErrorDialog() },
+            title = {
+                Text(
+                    text = dialogState.title,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = dialogState.message,
+                    fontSize = 16.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.dismissErrorDialog() }
+                ) {
+                    Text("OK", fontSize = 16.sp)
+                }
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Error,
+                    contentDescription = null,
+                    tint = Color(0xFFDC2626),
+                    modifier = Modifier.size(48.dp)
+                )
+            }
+        )
     }
 }
 
@@ -251,7 +291,10 @@ private fun LinkedSeniorCard(senior: SeniorProfile) {
                             )
                             .padding(8.dp)
                     )
+                    
                     Column {
+                        // Note: LinkedSeniorCard only shows senior info without nickname
+                        // as it displays linked seniors without relation details
                         Text(senior.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -373,6 +416,8 @@ private fun LinkForm(state: LinkSeniorUiState, viewModel: LinkSeniorViewModel) {
 
 @Composable
 private fun SearchSeniorScreen(state: LinkSeniorUiState, viewModel: LinkSeniorViewModel) {
+    var showScanner by remember { mutableStateOf(false) }
+    
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -421,22 +466,47 @@ private fun SearchSeniorScreen(state: LinkSeniorUiState, viewModel: LinkSeniorVi
                 color = Color(0xFF1F2937)
             )
             
-            OutlinedTextField(
-                value = state.seniorId,
-                onValueChange = viewModel::onSeniorIdChanged,
-                placeholder = { Text("Enter ID, e.g., SNR-KXM2VQW7ABCD", color = Color(0xFF9CA3AF)) },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = Color.White,
-                    focusedContainerColor = Color.White,
-                    unfocusedBorderColor = Color(0xFFD1D5DB),
-                    focusedBorderColor = Color(0xFF8B5CF6)
-                ),
-                isError = state.seniorIdError != null,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
-            )
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                OutlinedTextField(
+                    value = state.seniorId,
+                    onValueChange = viewModel::onSeniorIdChanged,
+                    placeholder = { Text("Enter ID or scan QR code", color = Color(0xFF9CA3AF)) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = Color.White,
+                        focusedContainerColor = Color.White,
+                        unfocusedBorderColor = Color(0xFFD1D5DB),
+                        focusedBorderColor = Color(0xFF8B5CF6)
+                    ),
+                    isError = state.seniorIdError != null,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                )
+                
+                // QR Code Scan Button
+                Button(
+                    onClick = { showScanner = true },
+                    modifier = Modifier
+                        .size(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF8B5CF6)
+                    ),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.QrCodeScanner,
+                        contentDescription = "Scan QR Code",
+                        modifier = Modifier.size(28.dp),
+                        tint = Color.White
+                    )
+                }
+            }
             
             Text(
                 "Format: SNR-XXXXXXXXXXXX (12 digits, e.g., SNR-KXM2VQW7ABCD)",
@@ -553,13 +623,36 @@ private fun SearchSeniorScreen(state: LinkSeniorUiState, viewModel: LinkSeniorVi
             }
         }
     }
+    
+    // QR Code Scanner Dialog
+    if (showScanner) {
+        QRCodeScannerDialog(
+            onDismiss = { showScanner = false },
+            onQRCodeScanned = { qrCodeData ->
+                try {
+                    // Parse QR code JSON: {"type":"pulselink_senior_id","id":"SNR-XXX"}
+                    val json = JSONObject(qrCodeData)
+                    if (json.optString("type") == "pulselink_senior_id") {
+                        val seniorId = json.optString("id")
+                        if (seniorId.isNotEmpty()) {
+                            viewModel.onSeniorIdChangedAndSearch(seniorId)
+                            showScanner = false
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Invalid QR code format, ignore
+                }
+            },
+            title = "Scan Senior QR Code"
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun VerifyAndLinkScreen(state: LinkSeniorUiState, viewModel: LinkSeniorViewModel) {
     val senior = state.foundSenior ?: return
-    val avatarIcon = AvatarHelper.getAvatarIcon(senior.avatarType)
+    val avatarEmoji = AvatarHelper.getAvatarEmoji(senior.avatarType)
     
     Column(
         modifier = Modifier
@@ -585,14 +678,13 @@ private fun VerifyAndLinkScreen(state: LinkSeniorUiState, viewModel: LinkSeniorV
                 Box(
                     modifier = Modifier
                         .size(64.dp)
-                        .background(Color(0xFF1F2937), CircleShape),
+                        .background(Color.White, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = avatarIcon,
-                        contentDescription = "Avatar",
-                        modifier = Modifier.size(36.dp),
-                        tint = Color.White
+                    Text(
+                        text = avatarEmoji,
+                        fontSize = 40.sp,
+                        color = Color.Unspecified
                     )
                 }
                 
@@ -601,7 +693,7 @@ private fun VerifyAndLinkScreen(state: LinkSeniorUiState, viewModel: LinkSeniorV
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        "Mr. ${senior.name}",
+                        senior.name,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF1F2937)

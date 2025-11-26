@@ -71,6 +71,7 @@ class ManageRelationUseCase @Inject constructor(
             status = CaregiverRelation.STATUS_PENDING,
             relationship = relationship,
             nickname = "",
+            caregiverName = "",
             // 默认权限（待批准后生效）
             canViewHealthData = true,
             canEditHealthData = false,

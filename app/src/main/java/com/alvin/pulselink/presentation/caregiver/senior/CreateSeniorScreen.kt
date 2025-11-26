@@ -52,6 +52,7 @@ fun CreateSeniorScreen(
 ) {
     val createState by viewModel.createFormState.collectAsStateWithLifecycle()
     val manageState by viewModel.uiState.collectAsStateWithLifecycle()
+    val errorDialogState by viewModel.errorDialog.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var showCreateForm by remember { mutableStateOf(false) }
 
@@ -69,14 +70,17 @@ fun CreateSeniorScreen(
             showCreateForm = false  // Close create form
             viewModel.resetCreateForm()
             viewModel.loadSeniors()
-            snackbarHostState.showSnackbar("Senior account created successfully!")
         }
     }
     
-    // Listen for errors
-    LaunchedEffect(createState.errorMessage) {
-        createState.errorMessage?.let {
-            snackbarHostState.showSnackbar(it)
+    // Collect UiEvent from Channel (success Snackbar)
+    LaunchedEffect(Unit) {
+        viewModel.uiEvent.collect { event ->
+            when (event) {
+                is ManageSeniorsViewModel.UiEvent.ShowSnackbar -> {
+                    snackbarHostState.showSnackbar(event.message)
+                }
+            }
         }
     }
     
@@ -135,6 +139,41 @@ fun CreateSeniorScreen(
                 else -> SeniorsList(createdSeniors)
             }
         }
+    }
+    
+    // Error Dialog (from StateFlow)
+    errorDialogState?.let { dialogState ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissErrorDialog() },
+            title = {
+                Text(
+                    text = dialogState.title,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = dialogState.message,
+                    fontSize = 16.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.dismissErrorDialog() }
+                ) {
+                    Text("OK", fontSize = 16.sp)
+                }
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Error,
+                    contentDescription = null,
+                    tint = Color(0xFFDC2626),
+                    modifier = Modifier.size(48.dp)
+                )
+            }
+        )
     }
     
     // QR code dialog is no longer shown here, changed to show when clicking button on card
@@ -205,14 +244,15 @@ private fun SeniorsList(seniors: List<ManagedSeniorInfo>) {
             )
         }
         items(seniors) { seniorInfo -> 
-            SeniorCard(seniorInfo.profile) 
+            SeniorCard(seniorInfo) 
         }
         item { Spacer(Modifier.height(80.dp)) }
     }
 }
 
 @Composable
-private fun SeniorCard(senior: SeniorProfile, viewModel: ManageSeniorsViewModel = hiltViewModel()) {
+private fun SeniorCard(seniorInfo: ManagedSeniorInfo, viewModel: ManageSeniorsViewModel = hiltViewModel()) {
+    val senior = seniorInfo.profile
     val clipboardManager = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -254,8 +294,13 @@ private fun SeniorCard(senior: SeniorProfile, viewModel: ManageSeniorsViewModel 
                     )
                     
                     Column {
+                        // Display name: 老人名字(nickname)
                         Text(
-                            text = senior.name,
+                            text = if (seniorInfo.relation.nickname.isNotBlank()) {
+                                "${senior.name} (${seniorInfo.relation.nickname})"
+                            } else {
+                                senior.name
+                            },
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -417,6 +462,18 @@ private fun CreateForm(state: CreateSeniorFormState, viewModel: ManageSeniorsVie
 
         // Relationship Information
         FormCard("Your Relationship") {
+            // Creator name field
+            FormField(
+                "Your Name *",
+                state.creatorName,
+                viewModel::onCreatorNameChanged,
+                "Enter your full name",
+                state.creatorNameError,
+                Icons.Default.Person
+            )
+            
+            Spacer(Modifier.height(16.dp))
+            
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     "You are the senior's... *",

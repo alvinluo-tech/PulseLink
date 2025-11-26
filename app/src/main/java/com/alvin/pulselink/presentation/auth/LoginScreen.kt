@@ -35,6 +35,7 @@ import com.alvin.pulselink.presentation.nav.Role
 import com.alvin.pulselink.presentation.common.theme.LocalRoleColorScheme
 import com.alvin.pulselink.presentation.common.theme.RoleThemeProvider
 import com.alvin.pulselink.presentation.common.theme.roleColors
+import com.alvin.pulselink.util.LoginHistoryManager
 
 /**
  * 统一的登录界面
@@ -76,6 +77,12 @@ fun LoginScreen(
         // 处理登录成功导航
         LaunchedEffect(uiState.isSuccess) {
             if (uiState.isSuccess) {
+                // 保存登录历史（账号+密码）
+                if (userRole == UserRole.SENIOR) {
+                    LoginHistoryManager.saveVirtualIdCredential(context, uiState.email, uiState.password)
+                } else {
+                    LoginHistoryManager.saveEmailCredential(context, uiState.email, uiState.password)
+                }
                 onNavigateToHome()
             }
         }
@@ -92,6 +99,7 @@ fun LoginScreen(
             uiState = uiState,
             titleResId = titleResId,
             userRole = userRole,
+            context = context,
             onVirtualIdChange = viewModel::onVirtualIdChange,
             onEmailChange = viewModel::onEmailChange,
             onPasswordChange = viewModel::onPasswordChange,
@@ -125,6 +133,7 @@ private fun LoginScreenContent(
     uiState: AuthUiState,
     titleResId: Int,
     userRole: UserRole,
+    context: android.content.Context,
     onVirtualIdChange: (String) -> Unit,
     onEmailChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
@@ -138,6 +147,27 @@ private fun LoginScreenContent(
 ) {
     // 从主题获取颜色
     val colors = roleColors
+    
+    // 加载历史记录
+    val loginHistory: List<String> = remember(userRole) {
+        if (userRole == UserRole.SENIOR) {
+            LoginHistoryManager.getVirtualIdHistory(context)
+        } else {
+            LoginHistoryManager.getEmailHistory(context)
+        }
+    }
+    
+    // 状态：下拉菜单展开
+    var expanded by remember { mutableStateOf(false) }
+    
+    // 过滤后的建议列表
+    val filteredSuggestions: List<String> = remember(uiState.email, loginHistory) {
+        if (uiState.email.isBlank()) {
+            loginHistory
+        } else {
+            loginHistory.filter { it.contains(uiState.email, ignoreCase = true) }
+        }
+    }
     
     Box(
         modifier = Modifier
@@ -216,43 +246,85 @@ private fun LoginScreenContent(
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
                 
-                OutlinedTextField(
-                    value = uiState.email,  // ⭐ 统一使用 email 字段（可以是邮箱或 SNR-ID）
-                    onValueChange = onEmailChange,
-                    placeholder = {
-                        Text(
-                            text = if (userRole == UserRole.SENIOR) 
-                                stringResource(R.string.senior_login_username_hint)  // ⭐ 老人端显示新提示
-                            else 
-                                stringResource(R.string.login_username_hint),
-                            color = colors.textHint,
-                            fontSize = 14.sp  // ⭐ 减小placeholder字体大小
-                        )
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email  // 使用邮箱键盘
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 70.dp),  // ⭐ 使用heightIn替代固定height，确保内容完整显示
-                    shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = colors.inputBackground.copy(alpha = 0.8f),
-                        focusedContainerColor = colors.inputBackground,
-                        unfocusedBorderColor = Color.Transparent,
-                        focusedBorderColor = colors.inputFocusBorder,
-                        unfocusedTextColor = colors.inputText,
-                        focusedTextColor = colors.inputText
-                    ),
-                    textStyle = LocalTextStyle.current.copy(fontSize = 16.sp),  // ⭐ 设置输入文字大小
-                    singleLine = true,
-                    isError = uiState.emailError != null,  // ⭐ 显示错误
-                    supportingText = {
-                        uiState.emailError?.let {
-                            Text(it, color = MaterialTheme.colorScheme.error)
+                // 带历史记录下拉菜单的输入框
+                ExposedDropdownMenuBox(
+                    expanded = expanded && filteredSuggestions.isNotEmpty(),
+                    onExpandedChange = { expanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = uiState.email,  // ⭐ 统一使用 email 字段（可以是邮箱或 SNR-ID）
+                        onValueChange = { newValue ->
+                            onEmailChange(newValue)
+                            expanded = true
+                            
+                            // 自动填充对应的密码
+                            val password = if (userRole == UserRole.SENIOR) {
+                                LoginHistoryManager.getPasswordForVirtualId(context, newValue)
+                            } else {
+                                LoginHistoryManager.getPasswordForEmail(context, newValue)
+                            }
+                            password?.let { onPasswordChange(it) }
+                        },
+                        placeholder = {
+                            Text(
+                                text = if (userRole == UserRole.SENIOR) 
+                                    stringResource(R.string.senior_login_username_hint)  // ⭐ 老人端显示新提示
+                                else 
+                                    stringResource(R.string.login_username_hint),
+                                color = colors.textHint,
+                                fontSize = 14.sp  // ⭐ 减小placeholder字体大小
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email  // 使用邮箱键盘
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
+                            .heightIn(min = 70.dp),  // ⭐ 使用heightIn替代固定height，确保内容完整显示
+                        shape = RoundedCornerShape(16.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedContainerColor = colors.inputBackground.copy(alpha = 0.8f),
+                            focusedContainerColor = colors.inputBackground,
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedBorderColor = colors.inputFocusBorder,
+                            unfocusedTextColor = colors.inputText,
+                            focusedTextColor = colors.inputText
+                        ),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 16.sp),  // ⭐ 设置输入文字大小
+                        singleLine = true,
+                        isError = uiState.emailError != null,  // ⭐ 显示错误
+                        supportingText = {
+                            uiState.emailError?.let {
+                                Text(it, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    )
+                    
+                    // 下拉菜单显示历史记录
+                    ExposedDropdownMenu(
+                        expanded = expanded && filteredSuggestions.isNotEmpty(),
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        filteredSuggestions.forEach { suggestion ->
+                            DropdownMenuItem(
+                                text = { Text(suggestion) },
+                                onClick = {
+                                    onEmailChange(suggestion)
+                                    expanded = false
+                                    
+                                    // 自动填充对应的密码
+                                    val password = if (userRole == UserRole.SENIOR) {
+                                        LoginHistoryManager.getPasswordForVirtualId(context, suggestion)
+                                    } else {
+                                        LoginHistoryManager.getPasswordForEmail(context, suggestion)
+                                    }
+                                    password?.let { onPasswordChange(it) }
+                                }
+                            )
                         }
                     }
-                )
+                }
             }
             
             Spacer(modifier = Modifier.height(24.dp))

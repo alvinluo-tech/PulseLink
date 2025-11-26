@@ -333,21 +333,19 @@ export const deleteSeniorAccount = onCall(
             });
             
             if (activeRelations.length > 0) {
-                // 构建其他护理者信息
+                // 构建其他护理者信息（英文）
                 const otherCaregivers = activeRelations.map(doc => {
                     const data = doc.data();
-                    const relationMap: { [key: string]: string } = {
-                        "Son": "儿子",
-                        "Daughter": "女儿",
-                        "Son-in-law": "女婿",
-                        "Daughter-in-law": "儿媳"
-                    };
-                    return relationMap[data.relationship] || data.relationship;
+                    // 使用英文关系名称
+                    return data.relationship || "Caregiver";
                 });
+                
+                const count = activeRelations.length;
+                const caregiverText = count === 1 ? "caregiver" : "caregivers";
                 
                 throw new HttpsError(
                     "failed-precondition",
-                    `无法删除：还有其他护理者（${otherCaregivers.join("、")}）正在使用此账号`
+                    `Cannot delete: ${count} other ${caregiverText} (${otherCaregivers.join(", ")}) are still linked to this senior account`
                 );
             }
 
@@ -444,95 +442,3 @@ function generateRandomPassword(): string {
     }
     return password;
 }
-
-/**
- * 一次性数据迁移：修复所有 senior_profiles 的 userId 字段
- * 
- * 这个函数会遍历所有 senior_profiles，查找对应的 users 文档，
- * 并更新 senior_profiles 的 userId 字段
- */
-export const fixSeniorUserIds = onCall(
-    {
-        timeoutSeconds: 300,
-        memory: "512MiB"
-    },
-    async (request) => {
-        // 只允许管理员调用（简单验证：检查是否是特定用户）
-        if (!request.auth) {
-            throw new HttpsError("unauthenticated", "请先登录");
-        }
-
-        const db = admin.firestore();
-        let fixedCount = 0;
-        let skippedCount = 0;
-        let errorCount = 0;
-        const errors: string[] = [];
-
-        try {
-            console.log("Starting fixSeniorUserIds migration...");
-
-            // 获取所有 senior_profiles
-            const profilesSnapshot = await db.collection("senior_profiles").get();
-            console.log(`Found ${profilesSnapshot.size} senior profiles`);
-
-            for (const profileDoc of profilesSnapshot.docs) {
-                const seniorId = profileDoc.id;
-                const profileData = profileDoc.data();
-
-                // 如果 userId 已经存在，跳过
-                if (profileData.userId) {
-                    console.log(`Skipping ${seniorId}: userId already set`);
-                    skippedCount++;
-                    continue;
-                }
-
-                try {
-                    // 查找对应的 users 文档（通过 seniorId 查询）
-                    const usersSnapshot = await db.collection("users")
-                        .where("seniorId", "==", seniorId)
-                        .limit(1)
-                        .get();
-
-                    if (usersSnapshot.empty) {
-                        console.log(`No user found for seniorId: ${seniorId}`);
-                        errorCount++;
-                        errors.push(`${seniorId}: No user found`);
-                        continue;
-                    }
-
-                    const userDoc = usersSnapshot.docs[0];
-                    const userId = userDoc.id;
-
-                    // 更新 senior_profiles 的 userId
-                    await profileDoc.ref.update({
-                        userId: userId
-                    });
-
-                    console.log(`Fixed ${seniorId}: set userId to ${userId}`);
-                    fixedCount++;
-
-                } catch (error: any) {
-                    console.error(`Error fixing ${seniorId}:`, error);
-                    errorCount++;
-                    errors.push(`${seniorId}: ${error.message}`);
-                }
-            }
-
-            const result = {
-                success: true,
-                total: profilesSnapshot.size,
-                fixed: fixedCount,
-                skipped: skippedCount,
-                errors: errorCount,
-                errorDetails: errors
-            };
-
-            console.log("Migration complete:", result);
-            return result;
-
-        } catch (error: any) {
-            console.error("Migration failed:", error);
-            throw new HttpsError("internal", `迁移失败: ${error.message}`);
-        }
-    }
-);

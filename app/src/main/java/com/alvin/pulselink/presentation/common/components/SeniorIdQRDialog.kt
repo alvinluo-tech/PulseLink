@@ -1,4 +1,4 @@
-package com.alvin.pulselink.presentation.caregiver.senior
+package com.alvin.pulselink.presentation.common.components
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
@@ -23,21 +23,22 @@ import androidx.compose.ui.window.Dialog
 import com.alvin.pulselink.util.QRCodeSaver
 
 /**
- * QR Code Display Dialog
+ * Senior ID QR Code Dialog
+ * 通用的老人 ID 二维码对话框（仅包含 Senior ID，用于 Link 功能）
  * 
  * @param seniorId Senior account ID (e.g., SNR-KXM2VQW7ABCD)
- * @param password Senior account password
- * @param qrCodeBitmap QR code image
+ * @param seniorName Senior name
+ * @param qrCodeBitmap QR code image bitmap
  * @param onDismiss Close dialog callback
- * @param onShare Share button callback (optional, for sharing image to other apps)
+ * @param onSave Save QR code callback (optional)
  */
 @Composable
-fun QRCodeDialog(
+fun SeniorIdQRDialog(
     seniorId: String,
-    password: String,
+    seniorName: String,
     qrCodeBitmap: Bitmap?,
     onDismiss: () -> Unit,
-    onShare: (() -> Unit)? = null
+    onSave: (() -> Unit)? = null
 ) {
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
@@ -64,11 +65,18 @@ fun QRCodeDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Senior Account Login Info",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Share Profile",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = seniorName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
@@ -96,13 +104,13 @@ fun QRCodeDialog(
                         ) {
                             Image(
                                 bitmap = qrCodeBitmap.asImageBitmap(),
-                                contentDescription = "Login QR Code",
+                                contentDescription = "Senior ID QR Code",
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
                     }
                 } else {
-                    // QR code generation failed message
+                    // QR code generation failed
                     Card(
                         modifier = Modifier
                             .size(280.dp)
@@ -125,24 +133,48 @@ fun QRCodeDialog(
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                // Account information
-                AccountInfoItem(
-                    label = "Account ID",
-                    value = seniorId,
-                    onCopy = {
-                        clipboardManager.setText(AnnotatedString(seniorId))
+                // Senior ID display with copy button
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Senior ID",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = seniorId,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        
+                        IconButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(seniorId))
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = "Copy Senior ID",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
-                )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                AccountInfoItem(
-                    label = "Password",
-                    value = password,
-                    onCopy = {
-                        clipboardManager.setText(AnnotatedString(password))
-                    }
-                )
+                }
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
@@ -157,16 +189,17 @@ fun QRCodeDialog(
                         modifier = Modifier.padding(16.dp)
                     ) {
                         Text(
-                            text = "📱 How to Use",
+                            text = "📱 How to Link",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "1. Open the senior app and select 'Scan to Login'\n" +
-                                   "2. Scan this QR code to login automatically\n" +
-                                   "3. Or manually enter the Account ID and Password",
+                            text = "1. Open PulseLink app as a caregiver\n" +
+                                   "2. Go to 'Link Senior Account'\n" +
+                                   "3. Scan this QR code or enter the Senior ID\n" +
+                                   "4. Wait for approval from the account creator",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -183,8 +216,8 @@ fun QRCodeDialog(
                     // Save button
                     OutlinedButton(
                         onClick = {
-                            QRCodeSaver.saveLoginQRCode(context, qrCodeBitmap, seniorId)
-                            onShare?.invoke()
+                            QRCodeSaver.saveSeniorQRCode(context, qrCodeBitmap, seniorName)
+                            onSave?.invoke()
                         },
                         modifier = Modifier.weight(1f),
                         enabled = qrCodeBitmap != null
@@ -206,54 +239,6 @@ fun QRCodeDialog(
                         Text("Close")
                     }
                 }
-            }
-        }
-    }
-}
-
-/**
- * Account information item (with copy function)
- */
-@Composable
-private fun AccountInfoItem(
-    label: String,
-    value: String,
-    onCopy: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = value,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            
-            IconButton(onClick = onCopy) {
-                Icon(
-                    Icons.Default.ContentCopy,
-                    contentDescription = "Copy $label",
-                    tint = MaterialTheme.colorScheme.primary
-                )
             }
         }
     }

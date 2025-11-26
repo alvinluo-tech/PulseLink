@@ -2,6 +2,7 @@ package com.alvin.pulselink.presentation.caregiver.senior
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,6 +16,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -22,6 +25,9 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alvin.pulselink.domain.usecase.profile.ManagedSeniorInfo
+import com.alvin.pulselink.presentation.common.components.SeniorIdQRDialog
+import com.alvin.pulselink.util.QRCodeGenerator
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -37,6 +43,68 @@ fun ManageSeniorsScreen(
     onEditSenior: (String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    
+    // Handle one-time UI events (success snackbar)
+    LaunchedEffect(Unit) {
+        viewModel.uiEvent.collect { event ->
+            when (event) {
+                is ManageSeniorsViewModel.UiEvent.ShowSnackbar -> {
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            message = event.message,
+                            duration = SnackbarDuration.Short
+                        )
+                    }
+                }
+            }
+        }
+    }
+    
+    // Error dialog state (StateFlow)
+    val errorDialogState by viewModel.errorDialog.collectAsStateWithLifecycle()
+    
+    // Show error dialog
+    errorDialogState?.let { errorState ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissErrorDialog() },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Error,
+                    contentDescription = null,
+                    tint = Color(0xFFEF4444),
+                    modifier = Modifier.size(48.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = errorState.title,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = errorState.message,
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.dismissErrorDialog() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF8B5CF6)
+                    )
+                ) {
+                    Text("OK")
+                }
+            },
+            containerColor = Color.White,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -65,6 +133,9 @@ fun ManageSeniorsScreen(
                 )
             )
         },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState)
+        }
     ) { paddingValues ->
         Box(
             modifier = Modifier
@@ -114,7 +185,7 @@ fun ManageSeniorsScreen(
                                     seniorInfo = seniorInfo,
                                     currentUserId = uiState.currentUserId,
                                     onEdit = { onEditSenior(it) },
-                                    onUnlink = { viewModel.unlinkSenior(it) },
+                                    onUnlink = { viewModel.showUnlinkConfirmation(seniorInfo) },
                                     onDelete = { viewModel.showDeleteConfirmation(seniorInfo) }
                                 )
                             }
@@ -131,6 +202,15 @@ fun ManageSeniorsScreen(
             seniorName = senior.profile.name,
             onConfirm = { viewModel.executeDeleteSenior(senior.profile.id) },
             onDismiss = { viewModel.cancelDelete() }
+        )
+    }
+    
+    // Unlink 确认对话框
+    uiState.seniorToUnlink?.let { senior ->
+        UnlinkConfirmDialog(
+            seniorName = senior.profile.name,
+            onConfirm = { viewModel.executeUnlinkSenior(senior.profile.id) },
+            onDismiss = { viewModel.cancelUnlink() }
         )
     }
 }
@@ -187,6 +267,11 @@ private fun SeniorCard(
     
     // Get avatar emoji based on avatarType
     val avatarEmoji = com.alvin.pulselink.util.AvatarHelper.getAvatarEmoji(profile.avatarType)
+    
+    // QR Code dialog state
+    var showQRDialog by remember { mutableStateOf(false) }
+    var qrBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    val clipboardManager = LocalClipboardManager.current
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -223,9 +308,13 @@ private fun SeniorCard(
                     
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-
+                            // Display name: 老人名字(nickname)
                             Text(
-                                text = profile.name,
+                                text = if (seniorInfo.relation.nickname.isNotBlank()) {
+                                    "${profile.name} (${seniorInfo.relation.nickname})"
+                                } else {
+                                    profile.name
+                                },
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF2C3E50)
@@ -269,6 +358,49 @@ private fun SeniorCard(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            // Senior ID with copy button
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFFF3F4F6),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Senior ID",
+                            fontSize = 11.sp,
+                            color = Color(0xFF6B7280)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = profile.id,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF111827)
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(profile.id))
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy Senior ID",
+                            tint = Color(0xFF8B5CF6),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Basic Info
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -323,6 +455,34 @@ private fun SeniorCard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // View Share QR Code Button
+            OutlinedButton(
+                onClick = {
+                    // Generate QR code with just Senior ID
+                    val qrData = """
+                        {
+                          "type": "pulselink_senior_id",
+                          "id": "${profile.id}"
+                        }
+                    """.trimIndent()
+                    qrBitmap = QRCodeGenerator.generateQRCode(qrData)
+                    showQRDialog = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, Color(0xFF8B5CF6)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF8B5CF6))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.QrCode2,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("View Share QR Code")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             // Actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -370,6 +530,16 @@ private fun SeniorCard(
                 }
             }
         }
+    }
+    
+    // QR Code Dialog
+    if (showQRDialog) {
+        SeniorIdQRDialog(
+            seniorId = profile.id,
+            seniorName = profile.name,
+            qrCodeBitmap = qrBitmap,
+            onDismiss = { showQRDialog = false }
+        )
     }
 }
 
@@ -481,5 +651,79 @@ private fun DeleteConfirmDialog(
             }
         },
         containerColor = Color.White
+    )
+}
+
+@Composable
+private fun UnlinkConfirmDialog(
+    seniorName: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.LinkOff,
+                contentDescription = null,
+                tint = Color(0xFFF59E0B),
+                modifier = Modifier.size(48.dp)
+            )
+        },
+        title = {
+            Text(
+                text = "Unlink from Senior?",
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Are you sure you want to unlink from \"$seniorName\"?",
+                    fontSize = 16.sp,
+                    color = Color(0xFF374151)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFFEF3C7),
+                    border = BorderStroke(1.dp, Color(0xFFFDE68A))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "ℹ️ What will happen:",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFD97706)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "• You will lose access to this senior's health data\n• The senior account will remain active\n• Other caregivers will not be affected",
+                            fontSize = 13.sp,
+                            color = Color(0xFF92400E),
+                            lineHeight = 20.sp
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFF59E0B)
+                )
+            ) {
+                Text("Unlink")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("Cancel", color = Color(0xFF6B7280))
+            }
+        },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(20.dp)
     )
 }

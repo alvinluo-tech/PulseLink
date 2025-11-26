@@ -1,5 +1,6 @@
 package com.alvin.pulselink.presentation.senior.profile
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -19,6 +20,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -27,7 +30,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alvin.pulselink.presentation.common.components.SeniorBottomNavigationBar
 import com.alvin.pulselink.presentation.common.components.LoadingScreen
+import com.alvin.pulselink.presentation.common.components.SeniorIdQRDialog
 import com.alvin.pulselink.ui.theme.PulseLinkTheme
+import com.alvin.pulselink.util.QRCodeGenerator
 
 @Composable
 fun ProfileScreen(
@@ -76,6 +81,15 @@ fun ProfileScreen(
                 UserProfileCard(uiState = uiState)
                 
                 Spacer(modifier = Modifier.height(24.dp))
+                
+                // Senior ID Card with QR Code
+                if (uiState.seniorId.isNotEmpty()) {
+                    SeniorIdCard(
+                        seniorId = uiState.seniorId,
+                        seniorName = uiState.userName
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
                 
                 // Today's Health Summary
                 HealthSummaryCard(uiState = uiState)
@@ -402,6 +416,101 @@ private fun MenuItemCard(
                 modifier = Modifier.size(20.dp)
             )
         }
+    }
+}
+
+@Composable
+fun SeniorIdCard(
+    seniorId: String,
+    seniorName: String
+) {
+    val clipboardManager = LocalClipboardManager.current
+    var showQRDialog by remember { mutableStateOf(false) }
+    var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFFF3F4F6)
+        ),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "My Senior ID",
+                    fontSize = 14.sp,
+                    color = Color(0xFF6B7280),
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = seniorId,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF111827)
+                )
+            }
+            
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Copy button
+                IconButton(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(seniorId))
+                    },
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Copy ID",
+                        tint = Color(0xFF8B5CF6),
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+                
+                // QR Code button
+                IconButton(
+                    onClick = {
+                        // Generate QR code with just Senior ID
+                        val qrData = """
+                            {
+                              "type": "pulselink_senior_id",
+                              "id": "$seniorId"
+                            }
+                        """.trimIndent()
+                        qrBitmap = QRCodeGenerator.generateQRCode(qrData)
+                        showQRDialog = true
+                    },
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.QrCode2,
+                        contentDescription = "Show QR Code",
+                        tint = Color(0xFF8B5CF6),
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+        }
+    }
+    
+    // QR Code Dialog
+    if (showQRDialog) {
+        SeniorIdQRDialog(
+            seniorId = seniorId,
+            seniorName = seniorName,
+            qrCodeBitmap = qrBitmap,
+            onDismiss = { showQRDialog = false }
+        )
     }
 }
 
