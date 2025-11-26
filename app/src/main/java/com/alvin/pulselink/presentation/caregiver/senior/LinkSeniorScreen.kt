@@ -447,7 +447,7 @@ private fun SearchSeniorScreen(state: LinkSeniorUiState, viewModel: LinkSeniorVi
             OutlinedTextField(
                 value = state.seniorId,
                 onValueChange = viewModel::onSeniorIdChanged,
-                placeholder = { Text("Enter ID, e.g., SNR-ABC1234", color = Color(0xFF9CA3AF)) },
+                placeholder = { Text("Enter ID, e.g., SNR-KXM2VQW7ABCD", color = Color(0xFF9CA3AF)) },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -462,7 +462,7 @@ private fun SearchSeniorScreen(state: LinkSeniorUiState, viewModel: LinkSeniorVi
             )
             
             Text(
-                "Format: SNR-XXXXXXXX (e.g., SNR-ABC12345)",
+                "Format: SNR-XXXXXXXXXXXX (12 digits, e.g., SNR-KXM2VQW7ABCD)",
                 fontSize = 12.sp,
                 color = Color(0xFF9CA3AF)
             )

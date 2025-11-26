@@ -34,6 +34,7 @@ import com.alvin.pulselink.presentation.common.components.SeniorBottomNavigation
 fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
     onNavigateBack: () -> Unit,
+    onNavigateToPermissionManagement: () -> Unit = {}, // ⭐ 新增权限管理导航
     onNavigateHome: () -> Unit = {},
     onNavigateToAssistant: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {}
@@ -76,6 +77,66 @@ fun SettingsScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            // ⭐ Permission Management Section
+            SettingsSection(
+                icon = Icons.Default.Security,
+                iconColor = Color(0xFFFF6B6B),
+                title = "权限管理"
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "管理护理者的访问权限和审批权限",
+                        fontSize = 14.sp,
+                        color = Color(0xFF5F6F7E),
+                        lineHeight = 20.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // 进入权限管理页面的按钮
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onNavigateToPermissionManagement() },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFF0F4FF)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ManageAccounts,
+                                    contentDescription = null,
+                                    tint = Color(0xFF448AFF),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Text(
+                                    text = "管理护理者权限",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF2C3E50)
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = Color(0xFF5F6F7E)
+                            )
+                        }
+                    }
+                }
+            }
+
             // Display Section
             SettingsSection(
                 icon = Icons.Default.Window,

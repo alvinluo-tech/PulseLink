@@ -33,9 +33,11 @@ import com.alvin.pulselink.presentation.caregiver.linkguard.FamilyRequestsScreen
 import com.alvin.pulselink.presentation.senior.home.HomeScreen
 import com.alvin.pulselink.presentation.senior.health.HealthReportScreen
 import com.alvin.pulselink.presentation.senior.history.HealthHistoryScreen
+import com.alvin.pulselink.presentation.senior.linkguard.SeniorLinkGuardScreen
 import com.alvin.pulselink.presentation.senior.profile.ProfileScreen
 import com.alvin.pulselink.presentation.senior.reminder.ReminderScreen
 import com.alvin.pulselink.presentation.senior.reminder.ReminderListScreen
+import com.alvin.pulselink.presentation.senior.settings.PermissionManagementScreen
 import com.alvin.pulselink.presentation.senior.settings.SettingsScreen
 import com.alvin.pulselink.presentation.senior.voice.VoiceAssistantScreen
 
@@ -265,6 +267,7 @@ fun AppNavigation(
                 onNavigateToAssistant = { navController.navigate(Screen.VoiceAssistant.route) },
                 onNavigateToReminderList = { navController.navigate(Screen.ReminderList.route) },
                 onNavigateToSettings = { navController.navigate(Screen.SeniorSettings.route) },
+                onNavigateToLinkGuard = { navController.navigate(Screen.SeniorLinkGuard.route) },
                 onLogout = {
                     navController.navigate(Screen.Welcome.route) {
                         popUpTo(Screen.SeniorHome.route) { inclusive = true }
@@ -273,12 +276,25 @@ fun AppNavigation(
             )
         }
         
+        composable(route = Screen.SeniorLinkGuard.route) {
+            SeniorLinkGuardScreen(
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+        
         composable(route = Screen.SeniorSettings.route) {
             SettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
+                onNavigateToPermissionManagement = { navController.navigate(Screen.PermissionManagement.route) }, // ⭐ 添加权限管理导航
                 onNavigateHome = { navController.navigate(Screen.SeniorHome.route) },
                 onNavigateToAssistant = { navController.navigate(Screen.VoiceAssistant.route) },
                 onNavigateToProfile = { navController.navigate(Screen.SeniorProfile.route) }
+            )
+        }
+        
+        composable(route = Screen.PermissionManagement.route) {
+            PermissionManagementScreen(
+                onBackClick = { navController.popBackStack() }
             )
         }
         

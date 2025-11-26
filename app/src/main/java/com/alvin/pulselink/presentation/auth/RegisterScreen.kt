@@ -134,14 +134,23 @@ fun RegisterScreen(
             
             // 注册表单
             RegisterForm(
+                role = role,  // ⭐ 传递角色参数
                 uiState = uiState,
                 onUsernameChange = viewModel::onUsernameChange,
                 onEmailChange = viewModel::onEmailChange,
                 onPhoneNumberChange = viewModel::onPhoneNumberChange,
                 onPasswordChange = viewModel::onPasswordChange,
                 onConfirmPasswordChange = viewModel::onConfirmPasswordChange,
+                onAgeChange = viewModel::onAgeChange,  // ⭐ 老人专用
+                onGenderChange = viewModel::onGenderChange,  // ⭐ 老人专用
                 onTermsAgreementChange = viewModel::onTermsAgreementChange,
-                onRegister = { viewModel.register(userRole) },
+                onRegister = { 
+                    if (role == Role.SENIOR) {
+                        viewModel.registerSenior()  // ⭐ 调用老人注册
+                    } else {
+                        viewModel.register(userRole)  // Caregiver 注册
+                    }
+                },
                 onNavigateToLogin = onNavigateToLogin,
                 buttonColor = colors.buttonBackground,
                 isLoading = uiState.isLoading

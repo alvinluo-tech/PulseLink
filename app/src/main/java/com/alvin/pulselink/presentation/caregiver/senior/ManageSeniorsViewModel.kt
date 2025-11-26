@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.domain.model.BloodPressureRecord
+import com.alvin.pulselink.domain.model.CaregiverPermissions
 import com.alvin.pulselink.domain.model.CaregiverRelationship
 import com.alvin.pulselink.domain.model.HealthHistory
 import com.alvin.pulselink.domain.model.Senior
@@ -241,16 +242,24 @@ class ManageSeniorsViewModel @Inject constructor(
                 age = ageInt,
                 gender = state.gender,
                 avatarType = avatarType,
-                caregiverIds = listOf(caregiverId),
+                caregiverIds = listOf(caregiverId), // ⭐ 创建即绑定：创建者立即加入
                 caregiverRelationships = mapOf(
                     caregiverId to CaregiverRelationship(
-                        relationship = state.relationship,
-                        nickname = state.nickname,
+                        relationship = state.relationship, // "儿子"、"女儿" 等
+                        nickname = state.relationship,
                         linkedAt = System.currentTimeMillis(),
-                        status = "active"
+                        status = "active", // 创建者默认激活
+                        approvedBy = caregiverId, // 创建者自批准
+                        permissions = CaregiverPermissions(
+                            canViewHealthData = true,
+                            canViewReminders = true,
+                            canEditReminders = true,
+                            canApproveLinkRequests = true // ⭐ 创建者拥有审批权限
+                        )
                     )
                 ),
-                creatorId = caregiverId,
+                creatorId = caregiverId, // ⭐ 记录创建者
+                registrationType = "CAREGIVER_CREATED", // ⭐ 明确设置注册类型
                 healthHistory = HealthHistory(
                     bloodPressure = bloodPressure,
                     heartRate = state.heartRate.toIntOrNull(),

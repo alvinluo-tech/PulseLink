@@ -1,5 +1,6 @@
 package com.alvin.pulselink.domain.usecase
 
+import android.util.Log
 import com.alvin.pulselink.domain.model.Senior
 import com.alvin.pulselink.domain.repository.SeniorRepository
 import com.google.firebase.functions.FirebaseFunctions
@@ -43,8 +44,13 @@ class CreateSeniorUseCase @Inject constructor(
         }
 
         return try {
+            Log.d("CreateSeniorUseCase", "Creating senior: name=${senior.name}, registrationType=${senior.registrationType}")
+            Log.d("CreateSeniorUseCase", "creatorId=${senior.creatorId}, caregiverIds=${senior.caregiverIds}")
+            
+            Log.d("CreateSeniorUseCase", "Creating Firestore document...")
             // Step 1: 先创建 Firestore 中的 senior 文档（获取自动生成的 ID）
             val createdSenior = seniorRepository.createSenior(senior).getOrThrow()
+            Log.d("CreateSeniorUseCase", "Senior created in Firestore: id=${createdSenior.id}")
             
             // Step 2: 调用 Cloud Function 创建 Firebase Auth 账户
             val data = hashMapOf(
@@ -53,23 +59,32 @@ class CreateSeniorUseCase @Inject constructor(
                 "password" to (customPassword ?: "")
             )
             
+            Log.d("CreateSeniorUseCase", "Calling createSeniorAccount Cloud Function...")
             val result = functions
                 .getHttpsCallable("createSeniorAccount")
                 .call(data)
                 .await()
             
+            Log.d("CreateSeniorUseCase", "Cloud Function response received")
             val response = result.getData() as? Map<*, *>
                 ?: return Result.failure(Exception("Invalid response from cloud function"))
             
+            Log.d("CreateSeniorUseCase", "Cloud Function success: ${response["success"]}")
             if (response["success"] != true) {
-                return Result.failure(Exception("Failed to create Firebase Auth account"))
+                val errorMsg = "Failed to create Firebase Auth account"
+                Log.e("CreateSeniorUseCase", errorMsg)
+                return Result.failure(Exception(errorMsg))
             }
             
             val generatedPassword = response["password"] as? String ?: ""
             
+            Log.d("CreateSeniorUseCase", "Updating senior with password...")
             // Step 3: 更新 Firestore 中的 senior 文档，存储密码
             val seniorWithPassword = createdSenior.copy(password = generatedPassword)
             seniorRepository.updateSenior(seniorWithPassword).getOrThrow()
+            
+            Log.d("CreateSeniorUseCase", "✅ Senior account created successfully!")
+            Log.d("CreateSeniorUseCase", "email=${response["email"]}, uid=${response["uid"]}")
             
             // Step 4: 返回完整结果
             Result.success(
@@ -85,6 +100,9 @@ class CreateSeniorUseCase @Inject constructor(
                 )
             )
         } catch (e: Exception) {
+            Log.e("CreateSeniorUseCase", "❌ Failed to create senior account", e)
+            Log.e("CreateSeniorUseCase", "Error message: ${e.message}")
+            Log.e("CreateSeniorUseCase", "Error type: ${e.javaClass.simpleName}")
             Result.failure(e)
         }
     }

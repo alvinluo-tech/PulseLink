@@ -14,5 +14,9 @@ data class LinkRequest(
     val message: String = "", // 请求消息
     val status: String = "pending", // 状态: "pending", "approved", "rejected"
     val createdAt: Long = System.currentTimeMillis(), // 请求创建时间
-    val updatedAt: Long = System.currentTimeMillis() // 最后更新时间
+    val updatedAt: Long = System.currentTimeMillis(), // 最后更新时间
+    val approvedBy: String? = null, // ⭐ 审批人 UID（批准时记录）
+    val approvedAt: Long? = null, // ⭐ 审批时间
+    val rejectedBy: String? = null, // ⭐ 拒绝人 UID（拒绝时记录）
+    val rejectedAt: Long? = null // ⭐ 拒绝时间
 )

@@ -3,6 +3,7 @@ package com.alvin.pulselink.presentation.caregiver.senior
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.alvin.pulselink.core.constants.AuthConstants
 import com.alvin.pulselink.domain.model.LinkRequest
 import com.alvin.pulselink.domain.model.Senior
 import com.alvin.pulselink.domain.repository.AuthRepository
@@ -176,9 +177,9 @@ class LinkSeniorViewModel @Inject constructor(
             return
         }
         
-        if (!seniorId.matches(Regex("^SNR-[A-Z0-9]{8}$"))) {
+        if (!seniorId.matches(AuthConstants.SNR_ID_REGEX)) {
             _uiState.update { it.copy(
-                seniorIdError = "Invalid ID format. Expected: SNR-XXXXXXXX"
+                seniorIdError = "Invalid ID format. Expected: SNR-XXXXXXXXXXXX"
             ) }
             return
         }

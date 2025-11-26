@@ -3,12 +3,20 @@ package com.alvin.pulselink.di
 import android.content.Context
 import com.alvin.pulselink.data.local.LocalDataSource
 import com.alvin.pulselink.data.repository.AuthRepositoryImpl
+import com.alvin.pulselink.data.repository.CaregiverRelationRepositoryImpl
+import com.alvin.pulselink.data.repository.ChatRepositoryImpl
+import com.alvin.pulselink.data.repository.HealthRecordRepositoryImpl
 import com.alvin.pulselink.data.repository.HealthRepositoryImpl
 import com.alvin.pulselink.data.repository.LinkRequestRepositoryImpl
+import com.alvin.pulselink.data.repository.SeniorProfileRepositoryImpl
 import com.alvin.pulselink.data.repository.SeniorRepositoryImpl
 import com.alvin.pulselink.domain.repository.AuthRepository
+import com.alvin.pulselink.domain.repository.CaregiverRelationRepository
+import com.alvin.pulselink.domain.repository.ChatRepository
+import com.alvin.pulselink.domain.repository.HealthRecordRepository
 import com.alvin.pulselink.domain.repository.HealthRepository
 import com.alvin.pulselink.domain.repository.LinkRequestRepository
+import com.alvin.pulselink.domain.repository.SeniorProfileRepository
 import com.alvin.pulselink.domain.repository.SeniorRepository
 import com.alvin.pulselink.domain.usecase.LoginUseCase
 import com.alvin.pulselink.domain.usecase.RegisterUseCase
@@ -109,6 +117,54 @@ object AppModule {
         firestore: FirebaseFirestore
     ): LinkRequestRepository {
         return LinkRequestRepositoryImpl(firestore)
+    }
+    
+    /**
+     * 提供 ChatRepository 实现
+     */
+    @Provides
+    @Singleton
+    fun provideChatRepository(
+        firestore: FirebaseFirestore,
+        firebaseAuth: FirebaseAuth
+    ): ChatRepository {
+        return ChatRepositoryImpl(firestore, firebaseAuth)
+    }
+    
+    // ========== 方案C 新增 Repository ==========
+    
+    /**
+     * 提供 SeniorProfileRepository 实现
+     */
+    @Provides
+    @Singleton
+    fun provideSeniorProfileRepository(
+        firestore: FirebaseFirestore,
+        functions: FirebaseFunctions
+    ): SeniorProfileRepository {
+        return SeniorProfileRepositoryImpl(firestore, functions)
+    }
+    
+    /**
+     * 提供 CaregiverRelationRepository 实现
+     */
+    @Provides
+    @Singleton
+    fun provideCaregiverRelationRepository(
+        firestore: FirebaseFirestore
+    ): CaregiverRelationRepository {
+        return CaregiverRelationRepositoryImpl(firestore)
+    }
+    
+    /**
+     * 提供 HealthRecordRepository 实现
+     */
+    @Provides
+    @Singleton
+    fun provideHealthRecordRepository(
+        firestore: FirebaseFirestore
+    ): HealthRecordRepository {
+        return HealthRecordRepositoryImpl(firestore)
     }
     
     @Provides

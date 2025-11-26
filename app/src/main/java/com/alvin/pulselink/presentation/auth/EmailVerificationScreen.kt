@@ -25,17 +25,17 @@ import com.alvin.pulselink.presentation.nav.Role
 
 /**
  * 统一的邮箱验证页面
- * 使用角色主题颜色（默认护理端为紫色）
+ * 使用角色主题颜色
  *
  * @param email 注册时使用的邮箱地址
  * @param onNavigateToLogin 返回登录页回调
- * @param role 当前角色，默认护理端以保证护理端主色调紫色一致
+ * @param role 当前角色，默认老人端以保持蓝色主色调
  */
 @Composable
 fun EmailVerificationScreen(
     email: String,
     onNavigateToLogin: () -> Unit,
-    role: String = Role.CAREGIVER
+    role: String = Role.SENIOR
 ) {
     RoleThemeProvider(role = role) {
         val colors = roleColors

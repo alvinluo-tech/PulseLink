@@ -7,8 +7,17 @@ interface AuthRepository {
     // 登录
     suspend fun login(email: String, password: String): Result<Unit>
     
-    // 注册（自动发送验证邮件）
+    // 注册（自动发送验证邮件）- Caregiver 注册
     suspend fun register(email: String, password: String, username: String, role: UserRole): Result<Unit>
+    
+    // 老人自主注册（需要额外的年龄和性别信息）
+    suspend fun registerSenior(
+        email: String, 
+        password: String, 
+        name: String, 
+        age: Int, 
+        gender: String
+    ): Result<Unit>
     
     // 忘记密码
     suspend fun resetPassword(email: String): Result<Unit>

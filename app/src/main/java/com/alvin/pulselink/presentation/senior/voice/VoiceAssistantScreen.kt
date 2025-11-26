@@ -1,30 +1,54 @@
 package com.alvin.pulselink.presentation.senior.voice
 
+import android.Manifest
+import android.util.Log
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.alvin.pulselink.domain.model.ChatMessage
+import com.alvin.pulselink.presentation.common.components.SeniorBottomNavigationBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,6 +59,57 @@ fun VoiceAssistantScreen(
     onNavigateProfile: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    
+    // 显示错误提示
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let { error ->
+            if (error.contains("Speech recognition not available") || 
+                error.contains("Google service") ||
+                error.contains("Network error") ||
+                error.contains("Server error")) {
+                Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    
+    // 检查权限状态
+    var hasAudioPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var showPermissionDeniedDialog by remember { mutableStateOf(false) }
+    
+    // 权限请求
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasAudioPermission = isGranted
+        if (!isGranted) {
+            showPermissionDeniedDialog = true
+        } else {
+            // 权限授予后立即开始录音
+            viewModel.onMicPressed()
+        }
+    }
+    
+    // 权限拒绝对话框
+    if (showPermissionDeniedDialog) {
+        AlertDialog(
+            onDismissRequest = { showPermissionDeniedDialog = false },
+            title = { Text("Microphone Permission Required") },
+            text = { Text("Voice input requires microphone permission. Please grant permission in app settings.") },
+            confirmButton = {
+                TextButton(onClick = { showPermissionDeniedDialog = false }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -66,10 +141,28 @@ fun VoiceAssistantScreen(
                 inputText = uiState.inputText,
                 onInputChange = viewModel::onInputChange,
                 onSendClick = viewModel::sendTextMessage,
-                onMicClick = viewModel::onMicClicked,
+                onMicPressed = {
+                    Log.d("VoiceDebug", "Mic pressed! hasPermission=$hasAudioPermission")
+                    if (hasAudioPermission) {
+                        Log.d("VoiceDebug", "Starting voice recognition...")
+                        viewModel.onMicPressed()
+                    } else {
+                        Log.d("VoiceDebug", "Requesting permission...")
+                        Toast.makeText(context, "Requesting microphone permission...", Toast.LENGTH_SHORT).show()
+                        permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                onMicReleased = {
+                    Log.d("VoiceDebug", "Mic released!")
+                    if (hasAudioPermission) {
+                        Log.d("VoiceDebug", "Stopping voice recognition...")
+                        viewModel.onMicReleased()
+                    }
+                },
                 onNavigateHome = onNavigateHome,
                 onNavigateProfile = onNavigateProfile,
-                sending = uiState.sending
+                sending = uiState.sending,
+                isRecording = uiState.listening
             )
         }
     ) { paddingValues ->
@@ -84,42 +177,199 @@ fun VoiceAssistantScreen(
                 .padding(paddingValues),
         ) {
             Spacer(modifier = Modifier.height(12.dp))
-            ChatList(messages = uiState.messages)
+            ChatList(
+                messages = uiState.messages,
+                isAiThinking = uiState.sending,
+                userAvatarEmoji = uiState.userAvatarEmoji
+            )
         }
     }
 }
 
 @Composable
-private fun ChatList(messages: List<ChatMessage>) {
+private fun ChatList(messages: List<ChatMessage>, isAiThinking: Boolean = false, userAvatarEmoji: String = "🧓") {
+    val listState = rememberLazyListState()
+    
+    // Auto-scroll to bottom when new messages arrive or AI starts thinking
+    LaunchedEffect(messages.size, isAiThinking) {
+        if (messages.isNotEmpty() || isAiThinking) {
+            val targetIndex = if (isAiThinking) messages.size else messages.size - 1
+            listState.animateScrollToItem(targetIndex)
+        }
+    }
+    
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
         contentPadding = PaddingValues(bottom = 160.dp),
     ) {
-        items(messages) { msg ->
-            val bubbleColor = if (msg.fromAssistant) Color.White else Color(0xFFE3F2FD)
-            val alignment = if (msg.fromAssistant) Alignment.CenterStart else Alignment.CenterEnd
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = if (msg.fromAssistant) Arrangement.Start else Arrangement.End
+        items(messages, key = { it.id }) { msg ->
+            ChatMessageItem(message = msg, userAvatarEmoji = userAvatarEmoji)
+        }
+        
+        // AI thinking indicator
+        if (isAiThinking) {
+            item {
+                AiThinkingIndicator()
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatMessageItem(message: ChatMessage, userAvatarEmoji: String = "🧓") {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = if (message.fromAssistant) Arrangement.Start else Arrangement.End
+    ) {
+        if (message.fromAssistant) {
+            // AI Avatar
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = CircleShape,
+                color = Color(0xFF448AFF)
             ) {
-                Surface(
-                    color = bubbleColor,
-                    shape = RoundedCornerShape(16.dp),
-                    tonalElevation = 2.dp,
-                    shadowElevation = 2.dp,
-                    modifier = Modifier
-                        .padding(vertical = 10.dp)
-                        .widthIn(max = 320.dp)
-                ) {
-                    Text(
-                        text = msg.text,
-                        fontSize = 22.sp,
-                        color = Color(0xFF0F172A),
-                        modifier = Modifier.padding(20.dp)
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.SmartToy,
+                        contentDescription = "AI",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+        
+        // Message bubble
+        Surface(
+            color = if (message.fromAssistant) Color.White else Color(0xFFE3F2FD),
+            shape = RoundedCornerShape(16.dp),
+            tonalElevation = 2.dp,
+            shadowElevation = 2.dp,
+            modifier = Modifier.widthIn(max = 280.dp)
+        ) {
+            Text(
+                text = message.text,
+                fontSize = 18.sp,
+                color = Color(0xFF0F172A),
+                modifier = Modifier.padding(12.dp)
+            )
+        }
+        
+        if (!message.fromAssistant) {
+            Spacer(modifier = Modifier.width(8.dp))
+            // User Avatar - using emoji
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = CircleShape,
+                color = Color(0xFFF3F4F6)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = userAvatarEmoji,
+                        fontSize = 24.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiThinkingIndicator() {
+    val infiniteTransition = rememberInfiniteTransition(label = "thinking")
+    val alpha1 by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot1"
+    )
+    val alpha2 by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, delayMillis = 200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot2"
+    )
+    val alpha3 by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, delayMillis = 400, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot3"
+    )
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.Start
+    ) {
+        // AI Avatar
+        Surface(
+            modifier = Modifier.size(40.dp),
+            shape = CircleShape,
+            color = Color(0xFF448AFF)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.SmartToy,
+                    contentDescription = "AI",
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        
+        // Thinking bubble
+        Surface(
+            color = Color.White,
+            shape = RoundedCornerShape(16.dp),
+            tonalElevation = 2.dp,
+            shadowElevation = 2.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Thinking",
+                    fontSize = 16.sp,
+                    color = Color(0xFF64748B),
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "●",
+                    fontSize = 18.sp,
+                    color = Color(0xFF448AFF),
+                    modifier = Modifier.alpha(alpha1)
+                )
+                Text(
+                    text = "●",
+                    fontSize = 18.sp,
+                    color = Color(0xFF448AFF),
+                    modifier = Modifier.alpha(alpha2)
+                )
+                Text(
+                    text = "●",
+                    fontSize = 18.sp,
+                    color = Color(0xFF448AFF),
+                    modifier = Modifier.alpha(alpha3)
+                )
             }
         }
     }
@@ -127,151 +377,153 @@ private fun ChatList(messages: List<ChatMessage>) {
 
 @Composable
 private fun BottomBar(
-    inputText: String,
-    onInputChange: (String) -> Unit,
+    inputText: androidx.compose.ui.text.input.TextFieldValue,
+    onInputChange: (androidx.compose.ui.text.input.TextFieldValue) -> Unit,
     onSendClick: () -> Unit,
-    onMicClick: () -> Unit,
+    onMicPressed: () -> Unit,
+    onMicReleased: () -> Unit,
     onNavigateHome: () -> Unit,
     onNavigateProfile: () -> Unit,
-    sending: Boolean
+    sending: Boolean,
+    isRecording: Boolean
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color.White.copy(alpha = 0.0f))
     ) {
-        // Input row
-        Row(
+        // Input row - simplified (no left mic button)
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 16.dp)
         ) {
-            // Mic button (square rounded)
-            Surface(
-                onClick = onMicClick,
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0xFF448AFF),
-                shadowElevation = 2.dp
+            // Recording indicator above input field
+            AnimatedVisibility(
+                visible = isRecording,
+                enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
             ) {
-                Box(
-                    modifier = Modifier.size(60.dp),
-                    contentAlignment = Alignment.Center
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            color = Color(0xFFE3F2FD),
+                            shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+                        )
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Mic,
-                        contentDescription = "Mic",
-                        tint = Color.White,
-                        modifier = Modifier.size(28.dp)
+                        contentDescription = "Recording",
+                        tint = Color(0xFF448AFF),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Listening... Release to stop",
+                        color = Color(0xFF448AFF),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // Text input
-            OutlinedTextField(
-                value = inputText,
-                onValueChange = onInputChange,
-                placeholder = { Text("Type a message") },
+            
+            // Input field row
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .height(60.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedBorderColor = Color(0xFFCBD5E1),
-                    unfocusedBorderColor = Color(0xFFE2E8F0)
-                ),
-                singleLine = true
-            )
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // Send button (disabled style when empty)
-            val enabled = inputText.isNotBlank() && !sending
-            Surface(
-                onClick = { if (enabled) onSendClick() },
-                shape = RoundedCornerShape(16.dp),
-                color = if (enabled) Color(0xFF448AFF) else Color(0xFFE2E8F0)
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier.size(60.dp),
-                    contentAlignment = Alignment.Center
+                // Text input
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = onInputChange,
+                    placeholder = { 
+                        Text(
+                            "Type message here...", 
+                            fontSize = 16.sp,
+                            color = Color(0xFF94A3B8)
+                        ) 
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(56.dp),
+                    shape = if (isRecording) {
+                        RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp, topStart = 0.dp, topEnd = 0.dp)
+                    } else {
+                        RoundedCornerShape(16.dp)
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        focusedBorderColor = Color(0xFF448AFF),
+                        unfocusedBorderColor = Color(0xFFCBD5E1)
+                    ),
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp)
+                )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Send button
+                val enabled = inputText.text.isNotBlank() && !sending
+                Surface(
+                    onClick = { if (enabled) onSendClick() },
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (enabled) Color(0xFF448AFF) else Color(0xFFE2E8F0)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Send,
-                        contentDescription = "Send",
-                        tint = if (enabled) Color.White else Color(0xFF94A3B8)
-                    )
+                    Box(
+                        modifier = Modifier.size(56.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (sending) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Send,
+                                contentDescription = "Send",
+                                tint = if (enabled) Color.White else Color(0xFF94A3B8),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
 
         // Hint text
         Text(
-            text = "Tap microphone for voice input",
+            text = "Long press mic button below to speak",
             color = Color(0xFF6B7280),
+            fontSize = 14.sp,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 8.dp),
+                .padding(top = 4.dp, bottom = 8.dp),
             textAlign = TextAlign.Center
         )
 
-        // Bottom navigation
-        NavigationBar(
-            containerColor = Color.White,
-            tonalElevation = 8.dp
-        ) {
-            NavigationBarItem(
-                icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                label = { Text("Home") },
-                selected = false,
-                onClick = onNavigateHome,
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Color(0xFF448AFF),
-                    selectedTextColor = Color(0xFF448AFF),
-                    unselectedIconColor = Color.Gray,
-                    unselectedTextColor = Color.Gray,
-                    indicatorColor = Color(0xFFE3F2FD)
-                )
-            )
-
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .offset(y = (-16).dp),
-                contentAlignment = Alignment.Center
-            ) {
-                FloatingActionButton(
-                    onClick = onMicClick,
-                    containerColor = Color(0xFF448AFF),
-                    contentColor = Color.White,
-                    shape = CircleShape,
-                    modifier = Modifier.size(64.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Mic,
-                        contentDescription = "Voice Assistant",
-                        modifier = Modifier.size(28.dp)
-                    )
+        // Bottom navigation with voice input enabled
+        SeniorBottomNavigationBar(
+            selectedItem = 1,
+            onItemSelected = { index ->
+                when (index) {
+                    0 -> onNavigateHome()
+                    1 -> { /* Already on voice assistant screen */ }
+                    2 -> onNavigateProfile()
                 }
-            }
-
-            NavigationBarItem(
-                icon = { Icon(Icons.Default.Person, contentDescription = "Profile") },
-                label = { Text("Profile") },
-                selected = true,
-                onClick = onNavigateProfile,
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Color(0xFF448AFF),
-                    selectedTextColor = Color(0xFF448AFF),
-                    unselectedIconColor = Color.Gray,
-                    unselectedTextColor = Color.Gray,
-                    indicatorColor = Color(0xFFE3F2FD)
-                )
-            )
-        }
+            },
+            enableVoiceInput = true,
+            isRecording = isRecording,
+            onMicPressed = onMicPressed,
+            onMicReleased = onMicReleased
+        )
     }
 }

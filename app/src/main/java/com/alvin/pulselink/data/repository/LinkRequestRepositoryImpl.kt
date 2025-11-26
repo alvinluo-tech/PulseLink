@@ -159,12 +159,30 @@ class LinkRequestRepositoryImpl @Inject constructor(
         }
     }
     
-    override suspend fun updateRequestStatus(requestId: String, status: String): Result<Unit> {
+    override suspend fun updateRequestStatus(
+        requestId: String,
+        status: String,
+        approvedBy: String?,
+        approvedAt: Long?,
+        rejectedBy: String?,
+        rejectedAt: Long?
+    ): Result<Unit> {
         return try {
             val updates = hashMapOf<String, Any>(
                 "status" to status,
                 "updatedAt" to System.currentTimeMillis()
             )
+            
+            // 添加审批记录
+            if (status == "approved" && approvedBy != null) {
+                updates["approvedBy"] = approvedBy
+                updates["approvedAt"] = approvedAt ?: System.currentTimeMillis()
+            }
+            
+            if (status == "rejected" && rejectedBy != null) {
+                updates["rejectedBy"] = rejectedBy
+                updates["rejectedAt"] = rejectedAt ?: System.currentTimeMillis()
+            }
             
             linkRequestsCollection.document(requestId).update(updates).await()
             
@@ -206,7 +224,11 @@ class LinkRequestRepositoryImpl @Inject constructor(
                 message = doc.getString("message") ?: "",
                 status = doc.getString("status") ?: "pending",
                 createdAt = doc.getLong("createdAt") ?: 0L,
-                updatedAt = doc.getLong("updatedAt") ?: 0L
+                updatedAt = doc.getLong("updatedAt") ?: 0L,
+                approvedBy = doc.getString("approvedBy"),
+                approvedAt = doc.getLong("approvedAt"),
+                rejectedBy = doc.getString("rejectedBy"),
+                rejectedAt = doc.getLong("rejectedAt")
             )
             
             Log.d("LinkRequestRepo", "Found request: $requestId")

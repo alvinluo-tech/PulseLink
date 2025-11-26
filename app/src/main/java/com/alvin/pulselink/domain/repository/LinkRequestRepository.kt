@@ -27,9 +27,16 @@ interface LinkRequestRepository {
     suspend fun getRequestsBySenior(seniorId: String): Result<List<LinkRequest>>
     
     /**
-     * 更新请求状态
+     * 更新请求状态（带审批人记录）
      */
-    suspend fun updateRequestStatus(requestId: String, status: String): Result<Unit>
+    suspend fun updateRequestStatus(
+        requestId: String,
+        status: String,
+        approvedBy: String? = null,
+        approvedAt: Long? = null,
+        rejectedBy: String? = null,
+        rejectedAt: Long? = null
+    ): Result<Unit>
     
     /**
      * 删除请求

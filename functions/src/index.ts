@@ -9,6 +9,74 @@ admin.initializeApp();
 // 定义密钥
 const googleApiKey = defineSecret("GOOGLE_API_KEY");
 
+// 导出音频转录函数
+export { transcribeAudio } from "./transcribe";
+
+// 语音转文字 Cloud Function
+export const voiceToText = onCall(
+    {
+        secrets: [googleApiKey],
+        timeoutSeconds: 60,
+        memory: "512MiB"
+    },
+    async (request) => {
+        // 1. 鉴权
+        if (!request.auth) {
+            throw new HttpsError("unauthenticated", "请先登录");
+        }
+
+        // 2. 获取音频数据 (Base64)
+        const base64Audio = request.data.audio;
+        if (!base64Audio) {
+            throw new HttpsError("invalid-argument", "无音频数据");
+        }
+
+        try {
+            const genAI = new GoogleGenerativeAI(googleApiKey.value());
+            
+            // 使用 Gemini 2.0 Flash 模型
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-2.0-flash-exp" 
+            });
+
+            // "听写员" 提示词
+            const prompt = `
+                Please transcribe this audio verbatim.
+                Requirements:
+                1. Only output the recognized text content.
+                2. Do not answer questions in the audio.
+                3. Do not add any explanatory text except punctuation.
+                4. If the audio contains Chinese, use Simplified Chinese.
+                5. If the audio contains English, use English.
+            `;
+
+            // 3. 发送请求
+            const result = await model.generateContent([
+                { text: prompt },
+                {
+                    inlineData: {
+                        mimeType: "audio/mp4", // Android 录制的 m4a 对应 audio/mp4
+                        data: base64Audio
+                    }
+                }
+            ]);
+
+            const transcription = result.response.text();
+            
+            console.log("识别结果:", transcription);
+
+            return { 
+                success: true, 
+                text: transcription.trim() 
+            };
+
+        } catch (error: any) {
+            console.error("Gemini STT Error:", error);
+            throw new HttpsError("internal", "语音识别服务暂时不可用");
+        }
+    }
+);
+
 // 定义云函数 (v2 写法)
 export const chatWithAI = onCall(
     {
@@ -117,11 +185,11 @@ export const createSeniorAccount = onCall(
             throw new HttpsError("invalid-argument", "name 是必需的");
         }
 
-        // 验证 seniorId 格式 (SNR-XXXXXXXX)
-        if (!/^SNR-[A-Z0-9]{8}$/.test(seniorId)) {
+        // 验证 seniorId 格式 (SNR-XXXXXXXXXXXX)
+        if (!/^SNR-[A-Z0-9]{12}$/.test(seniorId)) {
             throw new HttpsError(
                 "invalid-argument", 
-                "seniorId 格式不正确，应为 SNR-XXXXXXXX"
+                "seniorId 格式不正确，应为 SNR-XXXXXXXXXXXX"
             );
         }
 
@@ -278,4 +346,524 @@ function generateRandomPassword(): string {
         password += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return password;
+}
+
+// ============================================================================
+// 数据迁移函数 (Plan C 架构重构)
+// ============================================================================
+
+/**
+ * 迁移单个老人数据到新架构
+ * 
+ * 旧架构 (seniors collection):
+ * - 所有数据嵌入在一个文档中
+ * - caregiverRelationships 是一个 Map
+ * - healthHistory 是嵌套数组
+ * 
+ * 新架构:
+ * - senior_profiles: 简化的老人资料
+ * - caregiver_relations: 独立的关系管理
+ * - health_records: 独立的健康记录
+ * - senior_passwords: 独立的密码存储
+ * 
+ * 调用参数:
+ * - seniorId: 要迁移的老人 ID (可选，不提供则迁移所有)
+ * - dryRun: 是否只预览不执行 (默认 true)
+ * 
+ * 返回:
+ * - success: boolean
+ * - migratedCount: 迁移数量
+ * - details: 详细迁移信息
+ */
+export const migrateToNewArchitecture = onCall(
+    {
+        timeoutSeconds: 540, // 9 分钟，大量数据迁移需要较长时间
+        memory: "1GiB"
+    },
+    async (request) => {
+        // --- 鉴权检查：需要管理员权限 ---
+        if (!request.auth) {
+            throw new HttpsError("unauthenticated", "请先登录");
+        }
+
+        // 检查是否为管理员 (可以根据需要调整权限检查逻辑)
+        // 这里简单检查是否为特定的管理员 UID，生产环境应该使用 Custom Claims
+        const adminUids = ["YOUR_ADMIN_UID"]; // TODO: 替换为实际管理员 UID
+        // 暂时允许所有已登录用户执行迁移（调试用）
+        // if (!adminUids.includes(request.auth.uid)) {
+        //     throw new HttpsError("permission-denied", "需要管理员权限");
+        // }
+
+        const { seniorId, dryRun = true } = request.data;
+        const db = admin.firestore();
+        const results: MigrationResult[] = [];
+
+        try {
+            console.log(`Starting migration (dryRun: ${dryRun})`);
+
+            // 获取要迁移的老人文档
+            let seniorsQuery;
+            if (seniorId) {
+                // 迁移单个老人
+                seniorsQuery = db.collection("seniors").where("id", "==", seniorId);
+            } else {
+                // 迁移所有老人
+                seniorsQuery = db.collection("seniors");
+            }
+
+            const seniorsSnapshot = await seniorsQuery.get();
+            console.log(`Found ${seniorsSnapshot.size} seniors to migrate`);
+
+            for (const seniorDoc of seniorsSnapshot.docs) {
+                const oldData = seniorDoc.data();
+                const result = await migrateSingleSenior(db, oldData, dryRun);
+                results.push(result);
+            }
+
+            const successCount = results.filter(r => r.success).length;
+            const failedCount = results.filter(r => !r.success).length;
+
+            console.log(`Migration complete: ${successCount} success, ${failedCount} failed`);
+
+            return {
+                success: true,
+                dryRun: dryRun,
+                totalCount: seniorsSnapshot.size,
+                successCount: successCount,
+                failedCount: failedCount,
+                results: results
+            };
+
+        } catch (error: any) {
+            console.error("Migration error:", error);
+            throw new HttpsError("internal", `迁移失败: ${error.message}`);
+        }
+    }
+);
+
+interface MigrationResult {
+    seniorId: string;
+    success: boolean;
+    profileCreated: boolean;
+    relationsCreated: number;
+    healthRecordsCreated: number;
+    passwordMigrated: boolean;
+    error?: string;
+}
+
+/**
+ * 迁移单个老人的数据
+ */
+async function migrateSingleSenior(
+    db: admin.firestore.Firestore,
+    oldData: admin.firestore.DocumentData,
+    dryRun: boolean
+): Promise<MigrationResult> {
+    const seniorId = oldData.id;
+    const result: MigrationResult = {
+        seniorId: seniorId,
+        success: false,
+        profileCreated: false,
+        relationsCreated: 0,
+        healthRecordsCreated: 0,
+        passwordMigrated: false
+    };
+
+    try {
+        console.log(`Migrating senior: ${seniorId}`);
+
+        // 检查是否已经迁移过
+        const existingProfile = await db.collection("senior_profiles").doc(seniorId).get();
+        if (existingProfile.exists) {
+            console.log(`Senior ${seniorId} already migrated, skipping`);
+            result.success = true;
+            result.error = "Already migrated";
+            return result;
+        }
+
+        // 1. 创建 senior_profile
+        const profileData = {
+            id: seniorId,
+            userId: oldData.userId || null, // 可能为空（未绑定 Auth）
+            name: oldData.name || "未命名",
+            age: oldData.age || 0,
+            gender: oldData.gender || "未知",
+            avatarType: oldData.avatarType || "GRANDFATHER",
+            creatorId: oldData.createdBy || oldData.primaryCaregiverId || "",
+            createdAt: oldData.createdAt || Date.now(),
+            registrationType: oldData.userId ? "SELF_REGISTERED" : "CAREGIVER_CREATED"
+        };
+
+        if (!dryRun) {
+            await db.collection("senior_profiles").doc(seniorId).set(profileData);
+        }
+        result.profileCreated = true;
+        console.log(`  - Profile created: ${seniorId}`);
+
+        // 2. 迁移密码到 senior_passwords
+        if (oldData.passwordHash) {
+            const passwordData = {
+                seniorProfileId: seniorId,
+                passwordHash: oldData.passwordHash,
+                salt: oldData.salt || "",
+                createdAt: oldData.createdAt || Date.now(),
+                updatedAt: Date.now()
+            };
+
+            if (!dryRun) {
+                await db.collection("senior_passwords").doc(seniorId).set(passwordData);
+            }
+            result.passwordMigrated = true;
+            console.log(`  - Password migrated`);
+        }
+
+        // 3. 迁移 caregiverRelationships 到 caregiver_relations
+        const relationships = oldData.caregiverRelationships || {};
+        for (const [caregiverId, relationData] of Object.entries(relationships)) {
+            const relation = relationData as any;
+            const relationId = `${caregiverId}_${seniorId}`;
+
+            // 解析旧的权限数据（可能是嵌套对象或简单布尔值）
+            const permissions = relation.permissions || {};
+            const canViewHealthData = permissions.canViewHealthData ?? permissions.viewHealthData ?? true;
+            const canEditHealthData = permissions.canEditHealthData ?? permissions.editHealthData ?? false;
+            const canViewReminders = permissions.canViewReminders ?? permissions.viewReminders ?? true;
+            const canEditReminders = permissions.canEditReminders ?? permissions.editReminders ?? false;
+            const canApproveRequests = permissions.canApproveRequests ?? permissions.approveRequests ?? false;
+
+            const relationDocData = {
+                id: relationId,
+                caregiverId: caregiverId,
+                seniorProfileId: seniorId,
+                status: relation.status || "approved",
+                role: relation.role || "CAREGIVER",
+                // 扁平化权限
+                canViewHealthData: canViewHealthData,
+                canEditHealthData: canEditHealthData,
+                canViewReminders: canViewReminders,
+                canEditReminders: canEditReminders,
+                canApproveRequests: canApproveRequests,
+                createdAt: relation.createdAt || Date.now(),
+                updatedAt: relation.updatedAt || Date.now(),
+                approvedAt: relation.approvedAt || null,
+                approvedBy: relation.approvedBy || null
+            };
+
+            if (!dryRun) {
+                await db.collection("caregiver_relations").doc(relationId).set(relationDocData);
+            }
+            result.relationsCreated++;
+        }
+        console.log(`  - ${result.relationsCreated} relations created`);
+
+        // 4. 迁移 healthHistory 到 health_records
+        const healthHistory = oldData.healthHistory || [];
+        for (const healthEntry of healthHistory) {
+            const recordId = `${seniorId}_${healthEntry.recordedAt || Date.now()}`;
+            
+            // 确定健康记录类型
+            let recordType = "blood_pressure"; // 默认
+            if (healthEntry.type) {
+                recordType = healthEntry.type;
+            } else if (healthEntry.heartRate && !healthEntry.systolic) {
+                recordType = "heart_rate";
+            } else if (healthEntry.bloodSugar) {
+                recordType = "blood_sugar";
+            } else if (healthEntry.weight) {
+                recordType = "weight";
+            }
+
+            const recordData = {
+                id: recordId,
+                seniorProfileId: seniorId,
+                type: recordType,
+                // 血压数据
+                systolic: healthEntry.systolic || null,
+                diastolic: healthEntry.diastolic || null,
+                // 心率数据
+                heartRate: healthEntry.heartRate || null,
+                // 血糖数据
+                bloodSugar: healthEntry.bloodSugar || null,
+                // 体重数据
+                weight: healthEntry.weight || null,
+                // 元数据
+                recordedAt: healthEntry.recordedAt || Date.now(),
+                recordedBy: healthEntry.recordedBy || null,
+                source: healthEntry.source || "manual",
+                notes: healthEntry.notes || null
+            };
+
+            if (!dryRun) {
+                await db.collection("health_records").doc(recordId).set(recordData);
+            }
+            result.healthRecordsCreated++;
+        }
+        console.log(`  - ${result.healthRecordsCreated} health records created`);
+
+        result.success = true;
+        return result;
+
+    } catch (error: any) {
+        console.error(`Error migrating senior ${seniorId}:`, error);
+        result.error = error.message;
+        return result;
+    }
+}
+
+/**
+ * 回滚迁移（删除新架构数据）
+ * 
+ * ⚠️ 危险操作！仅用于测试环境
+ * 
+ * 调用参数:
+ * - seniorId: 要回滚的老人 ID (可选，不提供则回滚所有)
+ * - confirm: 必须为 "I_UNDERSTAND_THIS_WILL_DELETE_DATA"
+ */
+export const rollbackMigration = onCall(
+    {
+        timeoutSeconds: 300,
+        memory: "512MiB"
+    },
+    async (request) => {
+        if (!request.auth) {
+            throw new HttpsError("unauthenticated", "请先登录");
+        }
+
+        const { seniorId, confirm } = request.data;
+
+        // 安全确认
+        if (confirm !== "I_UNDERSTAND_THIS_WILL_DELETE_DATA") {
+            throw new HttpsError(
+                "invalid-argument", 
+                "请确认操作：设置 confirm 为 'I_UNDERSTAND_THIS_WILL_DELETE_DATA'"
+            );
+        }
+
+        const db = admin.firestore();
+        let deletedProfiles = 0;
+        let deletedRelations = 0;
+        let deletedHealthRecords = 0;
+        let deletedPasswords = 0;
+
+        try {
+            console.log(`Starting rollback for ${seniorId || "all seniors"}`);
+
+            if (seniorId) {
+                // 回滚单个老人
+                // 删除 profile
+                await db.collection("senior_profiles").doc(seniorId).delete();
+                deletedProfiles++;
+
+                // 删除 password
+                await db.collection("senior_passwords").doc(seniorId).delete();
+                deletedPasswords++;
+
+                // 删除 relations
+                const relationsQuery = await db.collection("caregiver_relations")
+                    .where("seniorProfileId", "==", seniorId)
+                    .get();
+                for (const doc of relationsQuery.docs) {
+                    await doc.ref.delete();
+                    deletedRelations++;
+                }
+
+                // 删除 health_records
+                const healthQuery = await db.collection("health_records")
+                    .where("seniorProfileId", "==", seniorId)
+                    .get();
+                for (const doc of healthQuery.docs) {
+                    await doc.ref.delete();
+                    deletedHealthRecords++;
+                }
+            } else {
+                // 回滚所有 - 批量删除
+                const batch = db.batch();
+                let batchCount = 0;
+                const maxBatchSize = 500;
+
+                // 删除所有 profiles
+                const profiles = await db.collection("senior_profiles").get();
+                for (const doc of profiles.docs) {
+                    batch.delete(doc.ref);
+                    batchCount++;
+                    deletedProfiles++;
+                    if (batchCount >= maxBatchSize) {
+                        await batch.commit();
+                        batchCount = 0;
+                    }
+                }
+
+                // 删除所有 passwords
+                const passwords = await db.collection("senior_passwords").get();
+                for (const doc of passwords.docs) {
+                    batch.delete(doc.ref);
+                    batchCount++;
+                    deletedPasswords++;
+                    if (batchCount >= maxBatchSize) {
+                        await batch.commit();
+                        batchCount = 0;
+                    }
+                }
+
+                // 删除所有 relations
+                const relations = await db.collection("caregiver_relations").get();
+                for (const doc of relations.docs) {
+                    batch.delete(doc.ref);
+                    batchCount++;
+                    deletedRelations++;
+                    if (batchCount >= maxBatchSize) {
+                        await batch.commit();
+                        batchCount = 0;
+                    }
+                }
+
+                // 删除所有 health_records
+                const healthRecords = await db.collection("health_records").get();
+                for (const doc of healthRecords.docs) {
+                    batch.delete(doc.ref);
+                    batchCount++;
+                    deletedHealthRecords++;
+                    if (batchCount >= maxBatchSize) {
+                        await batch.commit();
+                        batchCount = 0;
+                    }
+                }
+
+                if (batchCount > 0) {
+                    await batch.commit();
+                }
+            }
+
+            console.log(`Rollback complete: ${deletedProfiles} profiles, ${deletedRelations} relations, ${deletedHealthRecords} health records, ${deletedPasswords} passwords deleted`);
+
+            return {
+                success: true,
+                deletedProfiles,
+                deletedRelations,
+                deletedHealthRecords,
+                deletedPasswords
+            };
+
+        } catch (error: any) {
+            console.error("Rollback error:", error);
+            throw new HttpsError("internal", `回滚失败: ${error.message}`);
+        }
+    }
+);
+
+/**
+ * 验证迁移结果
+ * 
+ * 对比新旧数据，确保迁移正确
+ */
+export const validateMigration = onCall(
+    {
+        timeoutSeconds: 120,
+        memory: "512MiB"
+    },
+    async (request) => {
+        if (!request.auth) {
+            throw new HttpsError("unauthenticated", "请先登录");
+        }
+
+        const { seniorId } = request.data;
+        const db = admin.firestore();
+
+        try {
+            const validationResults: ValidationResult[] = [];
+
+            // 获取要验证的老人
+            let seniorsQuery;
+            if (seniorId) {
+                seniorsQuery = db.collection("seniors").where("id", "==", seniorId);
+            } else {
+                seniorsQuery = db.collection("seniors").limit(100); // 限制数量避免超时
+            }
+
+            const seniorsSnapshot = await seniorsQuery.get();
+
+            for (const seniorDoc of seniorsSnapshot.docs) {
+                const oldData = seniorDoc.data();
+                const sid = oldData.id;
+
+                // 获取新数据
+                const newProfile = await db.collection("senior_profiles").doc(sid).get();
+                const newRelations = await db.collection("caregiver_relations")
+                    .where("seniorProfileId", "==", sid)
+                    .get();
+                const newHealthRecords = await db.collection("health_records")
+                    .where("seniorProfileId", "==", sid)
+                    .get();
+
+                const result: ValidationResult = {
+                    seniorId: sid,
+                    profileExists: newProfile.exists,
+                    profileMatches: false,
+                    relationsCount: {
+                        old: Object.keys(oldData.caregiverRelationships || {}).length,
+                        new: newRelations.size
+                    },
+                    healthRecordsCount: {
+                        old: (oldData.healthHistory || []).length,
+                        new: newHealthRecords.size
+                    },
+                    issues: []
+                };
+
+                // 验证 profile 数据
+                if (newProfile.exists) {
+                    const newData = newProfile.data()!;
+                    if (newData.name !== oldData.name) {
+                        result.issues.push(`Name mismatch: ${oldData.name} vs ${newData.name}`);
+                    }
+                    if (newData.age !== oldData.age) {
+                        result.issues.push(`Age mismatch: ${oldData.age} vs ${newData.age}`);
+                    }
+                    result.profileMatches = result.issues.length === 0;
+                } else {
+                    result.issues.push("Profile not found in new collection");
+                }
+
+                // 验证关系数量
+                if (result.relationsCount.old !== result.relationsCount.new) {
+                    result.issues.push(
+                        `Relations count mismatch: ${result.relationsCount.old} vs ${result.relationsCount.new}`
+                    );
+                }
+
+                // 验证健康记录数量
+                if (result.healthRecordsCount.old !== result.healthRecordsCount.new) {
+                    result.issues.push(
+                        `Health records count mismatch: ${result.healthRecordsCount.old} vs ${result.healthRecordsCount.new}`
+                    );
+                }
+
+                validationResults.push(result);
+            }
+
+            const passedCount = validationResults.filter(r => r.issues.length === 0).length;
+            const failedCount = validationResults.filter(r => r.issues.length > 0).length;
+
+            return {
+                success: true,
+                totalValidated: validationResults.length,
+                passed: passedCount,
+                failed: failedCount,
+                results: validationResults
+            };
+
+        } catch (error: any) {
+            console.error("Validation error:", error);
+            throw new HttpsError("internal", `验证失败: ${error.message}`);
+        }
+    }
+);
+
+interface ValidationResult {
+    seniorId: string;
+    profileExists: boolean;
+    profileMatches: boolean;
+    relationsCount: { old: number; new: number };
+    healthRecordsCount: { old: number; new: number };
+    issues: string[];
 }

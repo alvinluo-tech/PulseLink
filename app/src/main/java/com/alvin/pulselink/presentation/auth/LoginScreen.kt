@@ -98,11 +98,8 @@ fun LoginScreen(
             onTermsAgreementChange = viewModel::onTermsAgreementChange,
             onScanQRCode = { showQRScanner = true },
             onLoginClick = {
-                if (userRole == UserRole.SENIOR) {
-                    viewModel.loginSenior()  // 使用新的邮箱密码登录
-                } else {
-                    viewModel.login(userRole)
-                }
+                // ⭐ 所有角色统一使用 login() 方法，支持邮箱和SNR-ID自动识别
+                viewModel.login(userRole)
             },
             onBackClick = onNavigateBack,
             onRegisterClick = onNavigateToRegister,
@@ -220,23 +217,24 @@ private fun LoginScreenContent(
                 )
                 
                 OutlinedTextField(
-                    value = if (userRole == UserRole.SENIOR) uiState.virtualId else uiState.email,
-                    onValueChange = if (userRole == UserRole.SENIOR) onVirtualIdChange else onEmailChange,
+                    value = uiState.email,  // ⭐ 统一使用 email 字段（可以是邮箱或 SNR-ID）
+                    onValueChange = onEmailChange,
                     placeholder = {
                         Text(
                             text = if (userRole == UserRole.SENIOR) 
-                                "SNR-XXXXXXXX" 
+                                stringResource(R.string.senior_login_username_hint)  // ⭐ 老人端显示新提示
                             else 
                                 stringResource(R.string.login_username_hint),
-                            color = colors.textHint
+                            color = colors.textHint,
+                            fontSize = 14.sp  // ⭐ 减小placeholder字体大小
                         )
                     },
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = if (userRole == UserRole.SENIOR) KeyboardType.Ascii else KeyboardType.Email
+                        keyboardType = KeyboardType.Email  // 使用邮箱键盘
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(60.dp),
+                        .heightIn(min = 70.dp),  // ⭐ 使用heightIn替代固定height，确保内容完整显示
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         unfocusedContainerColor = colors.inputBackground.copy(alpha = 0.8f),
@@ -246,7 +244,14 @@ private fun LoginScreenContent(
                         unfocusedTextColor = colors.inputText,
                         focusedTextColor = colors.inputText
                     ),
-                    singleLine = true
+                    textStyle = LocalTextStyle.current.copy(fontSize = 16.sp),  // ⭐ 设置输入文字大小
+                    singleLine = true,
+                    isError = uiState.emailError != null,  // ⭐ 显示错误
+                    supportingText = {
+                        uiState.emailError?.let {
+                            Text(it, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
                 )
             }
             
@@ -267,14 +272,15 @@ private fun LoginScreenContent(
                     placeholder = {
                         Text(
                             text = if (userRole == UserRole.SENIOR) "请输入密码" else stringResource(R.string.login_password_hint),
-                            color = colors.textHint
+                            color = colors.textHint,
+                            fontSize = 14.sp  // ⭐ 减小placeholder字体大小
                         )
                     },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(60.dp),
+                        .heightIn(min = 70.dp),  // ⭐ 使用heightIn替代固定height
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         unfocusedContainerColor = colors.inputBackground.copy(alpha = 0.8f),
@@ -284,6 +290,7 @@ private fun LoginScreenContent(
                         unfocusedTextColor = colors.inputText,
                         focusedTextColor = colors.inputText
                     ),
+                    textStyle = LocalTextStyle.current.copy(fontSize = 16.sp),  // ⭐ 设置输入文字大小
                     singleLine = true
                 )
             }
@@ -341,22 +348,24 @@ private fun LoginScreenContent(
                 }
             }
             
-            // 子女端：忘记密码和条款
-            if (userRole == UserRole.CAREGIVER) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = onForgotPasswordClick) {
-                        Text(
-                            text = "Forgot Password?",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = colors.primary
-                        )
-                    }
+            // 忘记密码和条款（所有角色都显示）
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = onForgotPasswordClick) {
+                    Text(
+                        text = "Forgot Password?",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = colors.primary
+                    )
                 }
-                
+            }
+            
+            if (userRole == UserRole.CAREGIVER) {
                 Spacer(modifier = Modifier.height(8.dp))
                 
                 Row(
@@ -442,26 +451,24 @@ private fun LoginScreenContent(
                 Spacer(modifier = Modifier.height(16.dp))
             }
             
-            // 注册链接（仅子女端显示）
-            if (userRole == UserRole.CAREGIVER) {
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            // 注册链接（所有角色都显示）
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.login_no_account),
+                    fontSize = 15.sp,
+                    color = colors.textSecondary
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                TextButton(onClick = onRegisterClick) {
                     Text(
-                        text = stringResource(R.string.login_no_account),
+                        text = stringResource(R.string.login_register_link),
                         fontSize = 15.sp,
-                        color = colors.textSecondary
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    TextButton(onClick = onRegisterClick) {
-                        Text(
-                            text = stringResource(R.string.login_register_link),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.textPrimary
-                        )
-                    }
                 }
             }
         }

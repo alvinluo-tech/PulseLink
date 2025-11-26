@@ -18,6 +18,7 @@
     <string name="login_welcome_back">欢迎回来！</string>
     <string name="login_username_label">邮箱</string>
     <string name="login_username_hint">请输入您的邮箱地址</string>
+    <string name="senior_login_username_hint">邮箱或老人ID（SNR-XXXXXXXXXXXX）</string>
     <string name="login_password_label">密码</string>
     <string name="login_password_hint">请输入您的密码</string>
     <string name="login_terms_agreement">我同意隐私政策和服务条款</string>

@@ -23,7 +23,7 @@ import androidx.compose.ui.window.Dialog
 /**
  * QR Code Display Dialog
  * 
- * @param seniorId Senior account ID (e.g., SNR-ABCD1234)
+ * @param seniorId Senior account ID (e.g., SNR-KXM2VQW7ABCD)
  * @param password Senior account password
  * @param qrCodeBitmap QR code image
  * @param onDismiss Close dialog callback

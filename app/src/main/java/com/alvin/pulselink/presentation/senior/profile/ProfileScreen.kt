@@ -37,6 +37,7 @@ fun ProfileScreen(
     onNavigateToAssistant: () -> Unit = {},
     onNavigateToReminderList: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToLinkGuard: () -> Unit = {},
     onLogout: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -85,6 +86,7 @@ fun ProfileScreen(
                 MenuSection(
                     onReminderClick = onNavigateToReminderList,
                     onSettingsClick = onNavigateToSettings,
+                    onLinkGuardClick = onNavigateToLinkGuard,
                     onLogout = onLogout
                 )
                 
@@ -271,6 +273,7 @@ private fun HealthMetricCard(
 private fun MenuSection(
     onReminderClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
+    onLinkGuardClick: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     Column(
@@ -287,6 +290,14 @@ private fun MenuSection(
             icon = Icons.Outlined.Notifications,
             title = "Reminders",
             onClick = onReminderClick
+        )
+        
+        // Link Guard 菜单项
+        MenuItemCard(
+            icon = Icons.Outlined.Shield,
+            title = "Link Guard",
+            subtitle = "Manage caregiver requests",
+            onClick = onLinkGuardClick
         )
         
         MenuItemCard(
@@ -335,6 +346,7 @@ private fun MenuSection(
 private fun MenuItemCard(
     icon: ImageVector,
     title: String,
+    subtitle: String? = null,
     onClick: () -> Unit
 ) {
     Card(
@@ -364,12 +376,23 @@ private fun MenuItemCard(
                 
                 Spacer(modifier = Modifier.width(16.dp))
                 
-                Text(
-                    text = title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF2C3E50)
-                )
+                Column {
+                    Text(
+                        text = title,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF2C3E50)
+                    )
+                    
+                    if (subtitle != null) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = subtitle,
+                            fontSize = 12.sp,
+                            color = Color(0xFF5F6F7E)
+                        )
+                    }
+                }
             }
             
             Icon(

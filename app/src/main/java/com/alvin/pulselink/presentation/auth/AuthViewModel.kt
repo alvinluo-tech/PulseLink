@@ -2,6 +2,7 @@ package com.alvin.pulselink.presentation.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.alvin.pulselink.core.constants.AuthConstants
 import com.alvin.pulselink.domain.model.UserRole
 import com.alvin.pulselink.domain.repository.SeniorRepository
 import com.alvin.pulselink.data.local.LocalDataSource
@@ -65,6 +66,17 @@ class AuthViewModel @Inject constructor(
         _uiState.update { it.copy(confirmPassword = confirmPassword, confirmPasswordError = null) }
     }
     
+    // ===== 老人注册专用字段 =====
+    
+    fun onAgeChange(age: String) {
+        val ageInt = age.toIntOrNull() ?: 0
+        _uiState.update { it.copy(age = ageInt, ageError = null) }
+    }
+    
+    fun onGenderChange(gender: String) {
+        _uiState.update { it.copy(gender = gender, genderError = null) }
+    }
+    
     // ===== 登录逻辑 =====
     
     /**
@@ -78,27 +90,57 @@ class AuthViewModel @Inject constructor(
             // 验证输入
             if (currentState.email.isBlank() || currentState.password.isBlank()) {
                 _uiState.update {
-                    it.copy(error = "Please enter email and password")
+                    it.copy(
+                        error = if (role == UserRole.SENIOR) "请输入账号ID和密码" else "Please enter email and password",
+                        emailError = if (currentState.email.isBlank()) {
+                            if (role == UserRole.SENIOR) "账号ID不能为空" else "Email is required"
+                        } else null,
+                        passwordError = if (currentState.password.isBlank()) {
+                            if (role == UserRole.SENIOR) "密码不能为空" else "Password is required"
+                        } else null
+                    )
                 }
                 return@launch
             }
             
-            // 验证电子邮件格式
-            if (!isValidEmail(currentState.email)) {
-                _uiState.update {
-                    it.copy(error = "Please enter a valid email address")
+            // ⭐ 老人端：验证输入格式（邮箱或SNR-ID）
+            if (role == UserRole.SENIOR) {
+                val input = currentState.email.trim()
+                val isSNRID = input.matches(AuthConstants.SNR_ID_REGEX)
+                val isEmail = isValidEmail(input)
+                
+                if (!isSNRID && !isEmail) {
+                    _uiState.update {
+                        it.copy(
+                            error = "请输入有效的邮箱或老人ID（SNR-XXXXXXXXXXXX）",
+                            emailError = "格式不正确"
+                        )
+                    }
+                    return@launch
                 }
-                return@launch
             }
             
-            if (!currentState.agreedToTerms) {
-                _uiState.update {
-                    it.copy(error = "Please agree to the Privacy Policy and Terms of Service")
+            // ⭐ 子女端：验证电子邮件格式
+            if (role == UserRole.CAREGIVER) {
+                if (!isValidEmail(currentState.email)) {
+                    _uiState.update {
+                        it.copy(
+                            error = "Please enter a valid email address",
+                            emailError = "Invalid email format"
+                        )
+                    }
+                    return@launch
                 }
-                return@launch
+                
+                if (!currentState.agreedToTerms) {
+                    _uiState.update {
+                        it.copy(error = "Please agree to the Privacy Policy and Terms of Service")
+                    }
+                    return@launch
+                }
             }
             
-            _uiState.update { it.copy(isLoading = true, error = null) }
+            _uiState.update { it.copy(isLoading = true, error = null, emailError = null, passwordError = null) }
             
             // 执行登录
             val result = loginUseCase(
@@ -179,8 +221,8 @@ class AuthViewModel @Inject constructor(
      * 老人端登录：通过虚拟ID和密码
      * 
      * 流程:
-     * 1. 输入虚拟ID（例如：SNR-ABCD1234）和密码
-     * 2. 自动拼接邮箱：senior_SNR-ABCD1234@pulselink.app
+     * 1. 输入虚拟ID（例如：SNR-KXM2VQW7ABCD）和密码
+     * 2. 自动拼接邮箱：senior_SNR-KXM2VQW7ABCD@pulselink.app
      * 3. 调用标准的 Firebase Auth 邮箱登录
      * 4. 验证角色是否为 SENIOR
      */
@@ -201,10 +243,10 @@ class AuthViewModel @Inject constructor(
             }
             
             // 验证虚拟ID格式
-            if (!currentState.virtualId.matches(Regex("^SNR-[A-Z0-9]{8}$"))) {
+            if (!currentState.virtualId.matches(AuthConstants.SNR_ID_REGEX)) {
                 _uiState.update {
                     it.copy(
-                        error = "ID格式不正确，应为 SNR-XXXXXXXX",
+                        error = "ID格式不正确，应为 SNR-XXXXXXXXXXXX",
                         virtualIdError = "ID格式不正确"
                     )
                 }
@@ -214,7 +256,7 @@ class AuthViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             
             // 自动拼接邮箱：senior_{虚拟ID}@pulselink.app
-            val email = "senior_${currentState.virtualId}@pulselink.app"
+            val email = AuthConstants.generateVirtualEmail(currentState.virtualId)
             
             // 执行登录（使用标准的邮箱密码登录）
             val result = loginUseCase(
@@ -276,7 +318,7 @@ class AuthViewModel @Inject constructor(
      * QR Code JSON 格式:
      * {
      *   "type": "pulselink_login",
-     *   "email": "senior_SNR-XXXXXXXX@pulselink.app",
+     *   "email": "senior_SNR-XXXXXXXXXXXX@pulselink.app",
      *   "password": "xxxxxxxx"
      * }
      */
@@ -286,7 +328,7 @@ class AuthViewModel @Inject constructor(
      * 支持格式：
      * {
      *   "type": "pulselink_login",
-     *   "id": "SNR-XXXXXXXX",
+     *   "id": "SNR-XXXXXXXXXXXX",
      *   "password": "xxxxxxxx"
      * }
      */
@@ -322,7 +364,7 @@ class AuthViewModel @Inject constructor(
                     val email = emailMatch.groupValues[1]
                     val password = passwordMatch.groupValues[1]
                     
-                    // 从邮箱中提取 ID（格式：senior_SNR-XXXXXXXX@pulselink.app）
+                    // 从邮箱中提取 ID（格式：senior_SNR-XXXXXXXXXXXX@pulselink.app）
                     val extractedId = email.substringAfter("senior_").substringBefore("@")
                     
                     _uiState.update {
@@ -359,8 +401,8 @@ class AuthViewModel @Inject constructor(
                 _uiState.update { it.copy(virtualIdError = "请输入虚拟ID") }
                 return@launch
             }
-            if (!id.matches(Regex("^SNR-[A-Z0-9]{8}$"))) {
-                _uiState.update { it.copy(virtualIdError = "ID格式不正确，应为 SNR-XXXXXXXX") }
+            if (!id.matches(AuthConstants.SNR_ID_REGEX)) {
+                _uiState.update { it.copy(virtualIdError = "ID格式不正确，应为 SNR-XXXXXXXXXXXX") }
                 return@launch
             }
 
@@ -400,8 +442,8 @@ class AuthViewModel @Inject constructor(
     // ===== 注册逻辑 =====
     
     /**
-     * 注册
-     * @param role 用户角色 (SENIOR 或 CAREGIVER)
+     * 注册 - Caregiver
+     * @param role 用户角色 (CAREGIVER)
      */
     fun register(role: UserRole) {
         if (!validateRegistrationInputs()) {
@@ -417,6 +459,44 @@ class AuthViewModel @Inject constructor(
                 password = currentState.password,
                 username = currentState.username,
                 role = role
+            )
+            
+            _uiState.update { 
+                if (result.isSuccess) {
+                    it.copy(
+                        isLoading = false,
+                        registrationSuccess = true,
+                        error = "Registration successful! Please check your email to verify your account."
+                    )
+                } else {
+                    it.copy(
+                        isLoading = false,
+                        error = result.exceptionOrNull()?.message ?: "Registration failed"
+                    )
+                }
+            }
+        }
+    }
+    
+    /**
+     * 老人自主注册
+     * 需要额外的年龄和性别信息
+     */
+    fun registerSenior() {
+        if (!validateSeniorRegistrationInputs()) {
+            return
+        }
+        
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            
+            val currentState = _uiState.value
+            val result = authRepository.registerSenior(
+                email = currentState.email,
+                password = currentState.password,
+                name = currentState.username,  // 老人使用真实姓名
+                age = currentState.age,
+                gender = currentState.gender
             )
             
             _uiState.update { 
@@ -513,6 +593,73 @@ class AuthViewModel @Inject constructor(
             isValid = false
         } else if (currentState.phoneNumber.length < 10) {
             _uiState.update { it.copy(phoneError = "Invalid phone number") }
+            isValid = false
+        }
+        
+        // 验证密码
+        if (currentState.password.isBlank()) {
+            _uiState.update { it.copy(passwordError = "Password is required") }
+            isValid = false
+        } else if (currentState.password.length < 6) {
+            _uiState.update { it.copy(passwordError = "Password must be at least 6 characters") }
+            isValid = false
+        }
+        
+        // 验证确认密码
+        if (currentState.confirmPassword.isBlank()) {
+            _uiState.update { it.copy(confirmPasswordError = "Please confirm your password") }
+            isValid = false
+        } else if (currentState.password != currentState.confirmPassword) {
+            _uiState.update { it.copy(confirmPasswordError = "Passwords do not match") }
+            isValid = false
+        }
+        
+        // 验证条款同意
+        if (!currentState.agreedToTerms) {
+            _uiState.update { it.copy(error = "Please agree to the Privacy Policy and Terms of Service") }
+            isValid = false
+        }
+        
+        return isValid
+    }
+    
+    /**
+     * 验证老人注册输入
+     */
+    private fun validateSeniorRegistrationInputs(): Boolean {
+        val currentState = _uiState.value
+        var isValid = true
+        
+        // 验证姓名
+        if (currentState.username.isBlank()) {
+            _uiState.update { it.copy(usernameError = "Name is required") }
+            isValid = false
+        } else if (currentState.username.length < 2) {
+            _uiState.update { it.copy(usernameError = "Name must be at least 2 characters") }
+            isValid = false
+        }
+        
+        // 验证年龄
+        if (currentState.age <= 0) {
+            _uiState.update { it.copy(ageError = "Please enter a valid age") }
+            isValid = false
+        } else if (currentState.age < 18 || currentState.age > 120) {
+            _uiState.update { it.copy(ageError = "Age must be between 18 and 120") }
+            isValid = false
+        }
+        
+        // 验证性别
+        if (currentState.gender.isBlank()) {
+            _uiState.update { it.copy(genderError = "Please select gender") }
+            isValid = false
+        }
+        
+        // 验证邮箱
+        if (currentState.email.isBlank()) {
+            _uiState.update { it.copy(emailError = "Email is required") }
+            isValid = false
+        } else if (!isValidEmail(currentState.email)) {
+            _uiState.update { it.copy(emailError = "Invalid email format") }
             isValid = false
         }
         

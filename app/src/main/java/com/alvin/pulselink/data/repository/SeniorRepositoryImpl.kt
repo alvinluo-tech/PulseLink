@@ -1,16 +1,21 @@
 package com.alvin.pulselink.data.repository
 
+import android.util.Log
 import com.alvin.pulselink.domain.model.BloodPressureRecord
+import com.alvin.pulselink.domain.model.CaregiverPermissions
 import com.alvin.pulselink.domain.model.CaregiverRelationship
 import com.alvin.pulselink.domain.model.HealthHistory
 import com.alvin.pulselink.domain.model.Senior
 import com.alvin.pulselink.domain.repository.SeniorRepository
+import com.alvin.pulselink.util.SnrIdGenerator
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.tasks.await
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val TAG = "SeniorRepo"
 
 @Singleton
 class SeniorRepositoryImpl @Inject constructor(
@@ -20,212 +25,195 @@ class SeniorRepositoryImpl @Inject constructor(
     
     private val seniorsCollection = firestore.collection("seniors")
     
-    override suspend fun createSenior(senior: Senior): Result<Senior> {
+    // ========== 统一的数据解析函数 ==========
+    
+    /**
+     * 从 Firestore DocumentSnapshot 解析 Senior 对象
+     * 统一解析逻辑，避免重复代码
+     */
+    private fun DocumentSnapshot.toSenior(): Senior? {
         return try {
-            // 生成唯一ID
-            val seniorId = senior.id.ifEmpty { 
-                "SNR-${UUID.randomUUID().toString().substring(0, 8).uppercase()}" 
-            }
+            val healthHistoryMap = get("healthHistory") as? Map<*, *>
+            val bloodPressureMap = healthHistoryMap?.get("bloodPressure") as? Map<*, *>
             
-            // 默认将创建者加�?caregiverIds，并记录 creatorId
-            val creatorId = if (senior.creatorId.isNotBlank()) senior.creatorId else senior.caregiverIds.firstOrNull() ?: ""
-            val caregiverIds = if (senior.caregiverIds.isNotEmpty()) senior.caregiverIds else listOfNotNull(creatorId)
-
-            // 转换 caregiverRelationships Map �?Firestore 格式
-            val relationshipsMap = senior.caregiverRelationships.mapValues { (_, relationship) ->
-                hashMapOf(
-                    "relationship" to relationship.relationship,
-                    "nickname" to relationship.nickname,
-                    "linkedAt" to relationship.linkedAt,
-                    "status" to relationship.status
-                )
-            }
-
-            val seniorData = hashMapOf(
-                "id" to seniorId,
-                "name" to senior.name,
-                "age" to senior.age,
-                "gender" to senior.gender,
-                "avatarType" to senior.avatarType,
-                "caregiverIds" to caregiverIds,
-                "pendingCaregiversIds" to senior.pendingCaregiversIds,
-                "caregiverRelationships" to relationshipsMap,
-                "creatorId" to creatorId,
-                "createdAt" to senior.createdAt,
-                "password" to senior.password, // 存储密码（用于生成二维码）
-                "healthHistory" to hashMapOf(
-                    "bloodPressure" to senior.healthHistory.bloodPressure?.let {
-                        hashMapOf(
-                            "systolic" to it.systolic,
-                            "diastolic" to it.diastolic,
-                            "recordedAt" to it.recordedAt
-                        )
-                    },
-                    "heartRate" to senior.healthHistory.heartRate,
-                    "bloodSugar" to senior.healthHistory.bloodSugar,
-                    "medicalConditions" to senior.healthHistory.medicalConditions,
-                    "medications" to senior.healthHistory.medications,
-                    "allergies" to senior.healthHistory.allergies
-                )
+            // 解析 caregiverRelationships Map
+            val relationshipsMap = get("caregiverRelationships") as? Map<*, *>
+            val caregiverRelationships = parseRelationships(relationshipsMap)
+            
+            Senior(
+                id = getString("id") ?: "",
+                name = getString("name") ?: "",
+                age = (getLong("age") ?: 0).toInt(),
+                gender = getString("gender") ?: "",
+                avatarType = getString("avatarType") ?: "",
+                caregiverIds = (get("caregiverIds") as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
+                caregiverRelationships = caregiverRelationships,
+                creatorId = getString("creatorId") ?: "",
+                createdAt = getLong("createdAt") ?: 0L,
+                password = getString("password") ?: "",
+                registrationType = getString("registrationType") ?: "CAREGIVER_CREATED",
+                healthHistory = parseHealthHistory(healthHistoryMap, bloodPressureMap)
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse senior document ${id}", e)
+            null
+        }
+    }
+    
+    /**
+     * 解析 caregiverRelationships Map
+     */
+    private fun parseRelationships(relationshipsMap: Map<*, *>?): Map<String, CaregiverRelationship> {
+        return relationshipsMap?.mapNotNull { (key, value) ->
+            val caregiverId = key as? String ?: return@mapNotNull null
+            val relMap = value as? Map<*, *> ?: return@mapNotNull null
+            
+            val permMap = relMap["permissions"] as? Map<*, *>
+            val permissions = CaregiverPermissions(
+                canViewHealthData = permMap?.get("canViewHealthData") as? Boolean ?: true,
+                canViewReminders = permMap?.get("canViewReminders") as? Boolean ?: true,
+                canEditReminders = permMap?.get("canEditReminders") as? Boolean ?: true,
+                canApproveLinkRequests = permMap?.get("canApproveLinkRequests") as? Boolean ?: false
             )
             
-            seniorsCollection.document(seniorId).set(seniorData).await()
-            Result.success(senior.copy(id = seniorId, caregiverIds = caregiverIds, creatorId = creatorId))
+            caregiverId to CaregiverRelationship(
+                relationship = relMap["relationship"] as? String ?: "",
+                nickname = relMap["nickname"] as? String ?: "",
+                linkedAt = relMap["linkedAt"] as? Long ?: System.currentTimeMillis(),
+                status = relMap["status"] as? String ?: "active",
+                message = relMap["message"] as? String ?: "",
+                approvedBy = relMap["approvedBy"] as? String ?: "",
+                permissions = permissions
+            )
+        }?.toMap() ?: emptyMap()
+    }
+    
+    /**
+     * 解析 healthHistory
+     */
+    private fun parseHealthHistory(healthHistoryMap: Map<*, *>?, bloodPressureMap: Map<*, *>?): HealthHistory {
+        return HealthHistory(
+            bloodPressure = bloodPressureMap?.let {
+                BloodPressureRecord(
+                    systolic = (it["systolic"] as? Long)?.toInt() ?: 0,
+                    diastolic = (it["diastolic"] as? Long)?.toInt() ?: 0,
+                    recordedAt = it["recordedAt"] as? Long ?: 0L
+                )
+            },
+            heartRate = (healthHistoryMap?.get("heartRate") as? Long)?.toInt(),
+            bloodSugar = healthHistoryMap?.get("bloodSugar") as? Double,
+            medicalConditions = (healthHistoryMap?.get("medicalConditions") as? List<*>)
+                ?.mapNotNull { it as? String } ?: emptyList(),
+            medications = (healthHistoryMap?.get("medications") as? List<*>)
+                ?.mapNotNull { it as? String } ?: emptyList(),
+            allergies = (healthHistoryMap?.get("allergies") as? List<*>)
+                ?.mapNotNull { it as? String } ?: emptyList()
+        )
+    }
+    
+    /**
+     * 将 Senior 转换为 Firestore 数据格式
+     */
+    private fun Senior.toFirestoreMap(): Map<String, Any?> {
+        val relationshipsMap = caregiverRelationships.mapValues { (_, relationship) ->
+            hashMapOf(
+                "relationship" to relationship.relationship,
+                "nickname" to relationship.nickname,
+                "linkedAt" to relationship.linkedAt,
+                "status" to relationship.status,
+                "message" to relationship.message,
+                "approvedBy" to relationship.approvedBy,
+                "permissions" to hashMapOf(
+                    "canViewHealthData" to relationship.permissions.canViewHealthData,
+                    "canViewReminders" to relationship.permissions.canViewReminders,
+                    "canEditReminders" to relationship.permissions.canEditReminders,
+                    "canApproveLinkRequests" to relationship.permissions.canApproveLinkRequests
+                )
+            )
+        }
+        
+        return hashMapOf(
+            "id" to id,
+            "name" to name,
+            "age" to age,
+            "gender" to gender,
+            "avatarType" to avatarType,
+            "caregiverIds" to caregiverIds,
+            "caregiverRelationships" to relationshipsMap,
+            "creatorId" to creatorId,
+            "createdAt" to createdAt,
+            "password" to password,
+            "registrationType" to registrationType,
+            "healthHistory" to hashMapOf(
+                "bloodPressure" to healthHistory.bloodPressure?.let {
+                    hashMapOf(
+                        "systolic" to it.systolic,
+                        "diastolic" to it.diastolic,
+                        "recordedAt" to it.recordedAt
+                    )
+                },
+                "heartRate" to healthHistory.heartRate,
+                "bloodSugar" to healthHistory.bloodSugar,
+                "medicalConditions" to healthHistory.medicalConditions,
+                "medications" to healthHistory.medications,
+                "allergies" to healthHistory.allergies
+            )
+        )
+    }
+    
+    // ========== Repository 方法实现 ==========
+    
+    override suspend fun createSenior(senior: Senior): Result<Senior> {
+        return try {
+            val seniorId = senior.id.ifEmpty { SnrIdGenerator.generate() }
+            val seniorWithId = senior.copy(id = seniorId)
+            
+            seniorsCollection.document(seniorId).set(seniorWithId.toFirestoreMap()).await()
+            Result.success(seniorWithId)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to create senior", e)
             Result.failure(e)
         }
     }
     
     override suspend fun getSeniorsByCaregiver(caregiverId: String): Result<List<Senior>> {
         return try {
-            android.util.Log.d("SeniorRepo", "getSeniorsByCaregiver - Querying for caregiverId: $caregiverId")
-            val snapshot = seniorsCollection
+            Log.d(TAG, "getSeniorsByCaregiver - caregiverId: $caregiverId")
+            
+            // 查询两种情况并合并
+            val snapshot1 = seniorsCollection
                 .whereArrayContains("caregiverIds", caregiverId)
-                .get()
-                .await()
+                .get().await()
             
-            android.util.Log.d("SeniorRepo", "getSeniorsByCaregiver - Found ${snapshot.size()} documents")
-            snapshot.documents.forEach { doc ->
-                android.util.Log.d("SeniorRepo", "  - Document ${doc.id}: caregiverIds=${doc.get("caregiverIds")}")
-            }
+            val snapshot2 = seniorsCollection
+                .whereEqualTo("creatorId", caregiverId)
+                .get().await()
             
-            val seniors = snapshot.documents.mapNotNull { doc ->
-                try {
-                    val healthHistoryMap = doc.get("healthHistory") as? Map<*, *>
-                    val bloodPressureMap = healthHistoryMap?.get("bloodPressure") as? Map<*, *>
-                    
-                    android.util.Log.d("SeniorRepo", "  - Reading senior: ${doc.getString("name")}")
-                    android.util.Log.d("SeniorRepo", "    healthHistoryMap: $healthHistoryMap")
-                    android.util.Log.d("SeniorRepo", "    bloodPressureMap: $bloodPressureMap")
-                    android.util.Log.d("SeniorRepo", "    heartRate: ${healthHistoryMap?.get("heartRate")}")
-                    
-                    // 读取 caregiverRelationships Map
-                    val relationshipsMap = doc.get("caregiverRelationships") as? Map<*, *>
-                    val caregiverRelationships = relationshipsMap?.mapNotNull { (key, value) ->
-                        val caregiverId = key as? String ?: return@mapNotNull null
-                        val relMap = value as? Map<*, *> ?: return@mapNotNull null
-                        caregiverId to CaregiverRelationship(
-                            relationship = relMap["relationship"] as? String ?: "",
-                            nickname = relMap["nickname"] as? String ?: "",
-                            linkedAt = relMap["linkedAt"] as? Long ?: System.currentTimeMillis(),
-                            status = relMap["status"] as? String ?: "active",
-                            message = relMap["message"] as? String ?: ""
-                        )
-                    }?.toMap() ?: emptyMap()
-                    
-                    val senior = Senior(
-                        id = doc.getString("id") ?: "",
-                        name = doc.getString("name") ?: "",
-                        age = (doc.getLong("age") ?: 0).toInt(),
-                        gender = doc.getString("gender") ?: "",
-                        avatarType = doc.getString("avatarType") ?: "",
-                        caregiverIds = (doc.get("caregiverIds") as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
-                        caregiverRelationships = caregiverRelationships,
-                        creatorId = doc.getString("creatorId") ?: "",
-                        createdAt = doc.getLong("createdAt") ?: 0L,
-                        password = doc.getString("password") ?: "", // 读取密码
-                        healthHistory = HealthHistory(
-                            bloodPressure = bloodPressureMap?.let {
-                                BloodPressureRecord(
-                                    systolic = (it["systolic"] as? Long)?.toInt() ?: 0,
-                                    diastolic = (it["diastolic"] as? Long)?.toInt() ?: 0,
-                                    recordedAt = it["recordedAt"] as? Long ?: 0L
-                                )
-                            },
-                            heartRate = (healthHistoryMap?.get("heartRate") as? Long)?.toInt(),
-                            bloodSugar = healthHistoryMap?.get("bloodSugar") as? Double,
-                            medicalConditions = (healthHistoryMap?.get("medicalConditions") as? List<*>)
-                                ?.mapNotNull { it as? String } ?: emptyList(),
-                            medications = (healthHistoryMap?.get("medications") as? List<*>)
-                                ?.mapNotNull { it as? String } ?: emptyList(),
-                            allergies = (healthHistoryMap?.get("allergies") as? List<*>)
-                                ?.mapNotNull { it as? String } ?: emptyList()
-                        )
-                    )
-                    
-                    android.util.Log.d("SeniorRepo", "    Parsed BP: ${senior.healthHistory.bloodPressure?.systolic}/${senior.healthHistory.bloodPressure?.diastolic}")
-                    android.util.Log.d("SeniorRepo", "    Parsed HR: ${senior.healthHistory.heartRate}")
-                    
-                    senior
-                } catch (e: Exception) {
-                    null
-                }
-            }
+            val allDocs = (snapshot1.documents + snapshot2.documents).distinctBy { it.id }
+            Log.d(TAG, "getSeniorsByCaregiver - Found ${allDocs.size} documents")
             
+            val seniors = allDocs.mapNotNull { it.toSenior() }
             Result.success(seniors)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to get seniors by caregiver", e)
             Result.failure(e)
         }
     }
     
     override suspend fun getSeniorsByCreator(creatorId: String): Result<List<Senior>> {
         return try {
-            android.util.Log.d("SeniorRepo", "getSeniorsByCreator - Querying for creatorId: $creatorId")
+            Log.d(TAG, "getSeniorsByCreator - creatorId: $creatorId")
+            
             val snapshot = seniorsCollection
                 .whereEqualTo("creatorId", creatorId)
-                .get()
-                .await()
+                .get().await()
             
-            android.util.Log.d("SeniorRepo", "getSeniorsByCreator - Found ${snapshot.size()} documents")
-            snapshot.documents.forEach { doc ->
-                android.util.Log.d("SeniorRepo", "  - Document ${doc.id}: name=${doc.getString("name")}, creatorId=${doc.get("creatorId")}")
-            }
+            Log.d(TAG, "getSeniorsByCreator - Found ${snapshot.size()} documents")
             
-            val seniors = snapshot.documents.mapNotNull { doc ->
-                try {
-                    val healthHistoryMap = doc.get("healthHistory") as? Map<*, *>
-                    val bloodPressureMap = healthHistoryMap?.get("bloodPressure") as? Map<*, *>
-                    
-                    // 读取 caregiverRelationships Map
-                    val relationshipsMap = doc.get("caregiverRelationships") as? Map<*, *>
-                    val caregiverRelationships = relationshipsMap?.mapNotNull { (key, value) ->
-                        val caregiverId = key as? String ?: return@mapNotNull null
-                        val relMap = value as? Map<*, *> ?: return@mapNotNull null
-                        caregiverId to CaregiverRelationship(
-                            relationship = relMap["relationship"] as? String ?: "",
-                            nickname = relMap["nickname"] as? String ?: "",
-                            linkedAt = relMap["linkedAt"] as? Long ?: System.currentTimeMillis(),
-                            status = relMap["status"] as? String ?: "active",
-                            message = relMap["message"] as? String ?: ""
-                        )
-                    }?.toMap() ?: emptyMap()
-                    
-                    Senior(
-                        id = doc.getString("id") ?: "",
-                        name = doc.getString("name") ?: "",
-                        age = (doc.getLong("age") ?: 0).toInt(),
-                        gender = doc.getString("gender") ?: "",
-                        avatarType = doc.getString("avatarType") ?: "",
-                        caregiverIds = (doc.get("caregiverIds") as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
-                        caregiverRelationships = caregiverRelationships,
-                        creatorId = doc.getString("creatorId") ?: "",
-                        createdAt = doc.getLong("createdAt") ?: 0L,
-                        password = doc.getString("password") ?: "", // 读取密码
-                        healthHistory = HealthHistory(
-                            bloodPressure = bloodPressureMap?.let {
-                                BloodPressureRecord(
-                                    systolic = (it["systolic"] as? Long)?.toInt() ?: 0,
-                                    diastolic = (it["diastolic"] as? Long)?.toInt() ?: 0,
-                                    recordedAt = it["recordedAt"] as? Long ?: 0L
-                                )
-                            },
-                            heartRate = (healthHistoryMap?.get("heartRate") as? Long)?.toInt(),
-                            bloodSugar = healthHistoryMap?.get("bloodSugar") as? Double,
-                            medicalConditions = (healthHistoryMap?.get("medicalConditions") as? List<*>)
-                                ?.mapNotNull { it as? String } ?: emptyList(),
-                            medications = (healthHistoryMap?.get("medications") as? List<*>)
-                                ?.mapNotNull { it as? String } ?: emptyList(),
-                            allergies = (healthHistoryMap?.get("allergies") as? List<*>)
-                                ?.mapNotNull { it as? String } ?: emptyList()
-                        )
-                    )
-                } catch (e: Exception) {
-                    null
-                }
-            }
-            
+            val seniors = snapshot.documents.mapNotNull { it.toSenior() }
             Result.success(seniors)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to get seniors by creator", e)
             Result.failure(e)
         }
     }
@@ -238,297 +226,97 @@ class SeniorRepositoryImpl @Inject constructor(
                 return Result.failure(Exception("Senior not found"))
             }
             
-            val healthHistoryMap = doc.get("healthHistory") as? Map<*, *>
-            val bloodPressureMap = healthHistoryMap?.get("bloodPressure") as? Map<*, *>
-            
-            // 读取 caregiverRelationships Map
-            val relationshipsMap = doc.get("caregiverRelationships") as? Map<*, *>
-            val caregiverRelationships = relationshipsMap?.mapNotNull { (key, value) ->
-                val caregiverId = key as? String ?: return@mapNotNull null
-                val relMap = value as? Map<*, *> ?: return@mapNotNull null
-                caregiverId to CaregiverRelationship(
-                    relationship = relMap["relationship"] as? String ?: "",
-                    nickname = relMap["nickname"] as? String ?: "",
-                    linkedAt = relMap["linkedAt"] as? Long ?: System.currentTimeMillis(),
-                    status = relMap["status"] as? String ?: "active",
-                            message = relMap["message"] as? String ?: ""
-                )
-            }?.toMap() ?: emptyMap()
-            
-            val senior = Senior(
-                id = doc.getString("id") ?: "",
-                name = doc.getString("name") ?: "",
-                age = (doc.getLong("age") ?: 0).toInt(),
-                gender = doc.getString("gender") ?: "",
-                avatarType = doc.getString("avatarType") ?: "",
-                caregiverIds = (doc.get("caregiverIds") as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
-                caregiverRelationships = caregiverRelationships,
-                creatorId = doc.getString("creatorId") ?: "",
-                createdAt = doc.getLong("createdAt") ?: 0L,
-                password = doc.getString("password") ?: "", // 读取密码
-                healthHistory = HealthHistory(
-                    bloodPressure = bloodPressureMap?.let {
-                        BloodPressureRecord(
-                            systolic = (it["systolic"] as? Long)?.toInt() ?: 0,
-                            diastolic = (it["diastolic"] as? Long)?.toInt() ?: 0,
-                            recordedAt = it["recordedAt"] as? Long ?: 0L
-                        )
-                    },
-                    heartRate = (healthHistoryMap?.get("heartRate") as? Long)?.toInt(),
-                    bloodSugar = healthHistoryMap?.get("bloodSugar") as? Double,
-                    medicalConditions = (healthHistoryMap?.get("medicalConditions") as? List<*>)
-                        ?.mapNotNull { it as? String } ?: emptyList(),
-                    medications = (healthHistoryMap?.get("medications") as? List<*>)
-                        ?.mapNotNull { it as? String } ?: emptyList(),
-                    allergies = (healthHistoryMap?.get("allergies") as? List<*>)
-                        ?.mapNotNull { it as? String } ?: emptyList()
-                )
-            )
-            
+            val senior = doc.toSenior() ?: return Result.failure(Exception("Failed to parse senior"))
             Result.success(senior)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to get senior by id", e)
             Result.failure(e)
         }
     }
     
     override suspend fun updateSenior(senior: Senior): Result<Unit> {
         return try {
-            // 转换 caregiverRelationships Map 为 Firestore 格式
-            val relationshipsMap = senior.caregiverRelationships.mapValues { (_, relationship) ->
-                hashMapOf(
-                    "relationship" to relationship.relationship,
-                    "nickname" to relationship.nickname,
-                    "linkedAt" to relationship.linkedAt,
-                    "status" to relationship.status,
-                    "message" to relationship.message
-                )
+            val updateData = senior.toFirestoreMap().filterKeys { 
+                it != "id" && it != "creatorId" && it != "createdAt" && it != "registrationType" 
             }
             
-            val seniorData = hashMapOf(
-                "name" to senior.name,
-                "age" to senior.age,
-                "gender" to senior.gender,
-                "avatarType" to senior.avatarType,
-                "caregiverIds" to senior.caregiverIds,
-                "caregiverRelationships" to relationshipsMap,
-                "password" to senior.password, // 更新密码
-                "healthHistory" to hashMapOf(
-                    "bloodPressure" to senior.healthHistory.bloodPressure?.let {
-                        hashMapOf(
-                            "systolic" to it.systolic,
-                            "diastolic" to it.diastolic,
-                            "recordedAt" to it.recordedAt
-                        )
-                    },
-                    "heartRate" to senior.healthHistory.heartRate,
-                    "bloodSugar" to senior.healthHistory.bloodSugar,
-                    "medicalConditions" to senior.healthHistory.medicalConditions,
-                    "medications" to senior.healthHistory.medications,
-                    "allergies" to senior.healthHistory.allergies
-                )
-            )
-            
-            seniorsCollection.document(senior.id).update(seniorData as Map<String, Any>).await()
+            seniorsCollection.document(senior.id).update(updateData).await()
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to update senior", e)
             Result.failure(e)
         }
     }
     
     override suspend fun deleteSenior(seniorId: String): Result<Unit> {
         return try {
-            // Step 1: 调用 Cloud Function 删除 Firebase Auth 账户�?users 集合中的文档
-            val data = hashMapOf(
-                "seniorId" to seniorId
-            )
-            
-            functions
-                .getHttpsCallable("deleteSeniorAccount")
-                .call(data)
+            functions.getHttpsCallable("deleteSeniorAccount")
+                .call(hashMapOf("seniorId" to seniorId))
                 .await()
             
-            // Step 2: 删除 Firestore seniors 集合中的文档
             seniorsCollection.document(seniorId).delete().await()
-            
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete senior", e)
             Result.failure(e)
         }
     }
     
     override suspend fun getPendingLinkRequests(creatorId: String): Result<List<Senior>> {
         return try {
-            // 获取创建者创建的所有老人账户
             val snapshot = seniorsCollection
                 .whereEqualTo("creatorId", creatorId)
-                .get()
-                .await()
+                .get().await()
             
-            val seniors = snapshot.documents.mapNotNull { doc ->
-                try {
-                    val healthHistoryMap = doc.get("healthHistory") as? Map<*, *>
-                    val bloodPressureMap = healthHistoryMap?.get("bloodPressure") as? Map<*, *>
-                    
-                    // 读取 caregiverRelationships Map
-                    val relationshipsMap = doc.get("caregiverRelationships") as? Map<*, *>
-                    val caregiverRelationships = relationshipsMap?.mapNotNull { (key, value) ->
-                        val caregiverId = key as? String ?: return@mapNotNull null
-                        val relMap = value as? Map<*, *> ?: return@mapNotNull null
-                        caregiverId to CaregiverRelationship(
-                            relationship = relMap["relationship"] as? String ?: "",
-                            nickname = relMap["nickname"] as? String ?: "",
-                            linkedAt = relMap["linkedAt"] as? Long ?: System.currentTimeMillis(),
-                            status = relMap["status"] as? String ?: "active",
-                            message = relMap["message"] as? String ?: ""
-                        )
-                    }?.toMap() ?: emptyMap()
-                    
-                    // 只返回有 pending 状态请求的老人
-                    if (caregiverRelationships.any { it.value.status == "pending" }) {
-                        Senior(
-                            id = doc.getString("id") ?: "",
-                            name = doc.getString("name") ?: "",
-                            age = (doc.getLong("age") ?: 0).toInt(),
-                            gender = doc.getString("gender") ?: "",
-                            avatarType = doc.getString("avatarType") ?: "",
-                            caregiverIds = (doc.get("caregiverIds") as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
-                            caregiverRelationships = caregiverRelationships,
-                            creatorId = doc.getString("creatorId") ?: "",
-                            createdAt = doc.getLong("createdAt") ?: 0L,
-                            password = doc.getString("password") ?: "",
-                            healthHistory = HealthHistory(
-                                bloodPressure = bloodPressureMap?.let {
-                                    BloodPressureRecord(
-                                        systolic = (it["systolic"] as? Long)?.toInt() ?: 0,
-                                        diastolic = (it["diastolic"] as? Long)?.toInt() ?: 0,
-                                        recordedAt = it["recordedAt"] as? Long ?: 0L
-                                    )
-                                },
-                                heartRate = (healthHistoryMap?.get("heartRate") as? Long)?.toInt(),
-                                bloodSugar = healthHistoryMap?.get("bloodSugar") as? Double,
-                                medicalConditions = (healthHistoryMap?.get("medicalConditions") as? List<*>)
-                                    ?.mapNotNull { it as? String } ?: emptyList(),
-                                medications = (healthHistoryMap?.get("medications") as? List<*>)
-                                    ?.mapNotNull { it as? String } ?: emptyList(),
-                                allergies = (healthHistoryMap?.get("allergies") as? List<*>)
-                                    ?.mapNotNull { it as? String } ?: emptyList()
-                            )
-                        )
-                    } else {
-                        null
-                    }
-                } catch (e: Exception) {
-                    null
+            val seniors = snapshot.documents
+                .mapNotNull { it.toSenior() }
+                .filter { senior -> 
+                    senior.caregiverRelationships.any { it.value.status == "pending" }
                 }
-            }
             
             Result.success(seniors)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to get pending link requests", e)
             Result.failure(e)
         }
     }
     
     override suspend fun getSeniorsWithPendingByCaregiver(caregiverId: String): Result<List<Senior>> {
         return try {
-            // 由于Firestore不支持直接查询Map的key，我们需要获取所有seniors然后过滤
-            // 更高效的方法是维护一个反向索引，但这里为了简单起见先用这个方法
+            // 由于 Firestore 不支持直接查询 Map 的 key，需要获取所有后过滤
             val snapshot = seniorsCollection.get().await()
             
-            val seniors = snapshot.documents.mapNotNull { doc ->
-                try {
-                    val healthHistoryMap = doc.get("healthHistory") as? Map<*, *>
-                    val bloodPressureMap = healthHistoryMap?.get("bloodPressure") as? Map<*, *>
-                    
-                    // 读取 caregiverRelationships Map
-                    val relationshipsMap = doc.get("caregiverRelationships") as? Map<*, *>
-                    val caregiverRelationships = relationshipsMap?.mapNotNull { (key, value) ->
-                        val cId = key as? String ?: return@mapNotNull null
-                        val relMap = value as? Map<*, *> ?: return@mapNotNull null
-                        cId to CaregiverRelationship(
-                            relationship = relMap["relationship"] as? String ?: "",
-                            nickname = relMap["nickname"] as? String ?: "",
-                            linkedAt = relMap["linkedAt"] as? Long ?: System.currentTimeMillis(),
-                            status = relMap["status"] as? String ?: "active",
-                            message = relMap["message"] as? String ?: ""
-                        )
-                    }?.toMap() ?: emptyMap()
-                    
-                    // 只返回与该caregiver相关的老人（在caregiverRelationships中有记录）
-                    if (caregiverRelationships.containsKey(caregiverId)) {
-                        Senior(
-                            id = doc.getString("id") ?: "",
-                            name = doc.getString("name") ?: "",
-                            age = (doc.getLong("age") ?: 0).toInt(),
-                            gender = doc.getString("gender") ?: "",
-                            avatarType = doc.getString("avatarType") ?: "",
-                            caregiverIds = (doc.get("caregiverIds") as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
-                            caregiverRelationships = caregiverRelationships,
-                            creatorId = doc.getString("creatorId") ?: "",
-                            createdAt = doc.getLong("createdAt") ?: 0L,
-                            password = doc.getString("password") ?: "",
-                            healthHistory = HealthHistory(
-                                bloodPressure = bloodPressureMap?.let {
-                                    BloodPressureRecord(
-                                        systolic = (it["systolic"] as? Long)?.toInt() ?: 0,
-                                        diastolic = (it["diastolic"] as? Long)?.toInt() ?: 0,
-                                        recordedAt = it["recordedAt"] as? Long ?: 0L
-                                    )
-                                },
-                                heartRate = (healthHistoryMap?.get("heartRate") as? Long)?.toInt(),
-                                bloodSugar = healthHistoryMap?.get("bloodSugar") as? Double,
-                                medicalConditions = (healthHistoryMap?.get("medicalConditions") as? List<*>)
-                                    ?.mapNotNull { it as? String } ?: emptyList(),
-                                medications = (healthHistoryMap?.get("medications") as? List<*>)
-                                    ?.mapNotNull { it as? String } ?: emptyList(),
-                                allergies = (healthHistoryMap?.get("allergies") as? List<*>)
-                                    ?.mapNotNull { it as? String } ?: emptyList()
-                            )
-                        )
-                    } else {
-                        null
-                    }
-                } catch (e: Exception) {
-                    null
-                }
-            }
+            val seniors = snapshot.documents
+                .mapNotNull { it.toSenior() }
+                .filter { it.caregiverRelationships.containsKey(caregiverId) }
             
             Result.success(seniors)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to get seniors with pending", e)
             Result.failure(e)
         }
     }
     
     override suspend fun getPendingRequestsByCaregiver(caregiverId: String): Result<List<Senior>> {
-        // 这个方法现在已经不需要了，因为我们使用独立的 linkRequests collection
-        // 返回空列表即可
+        // 使用独立的 linkRequests collection，返回空列表
         return Result.success(emptyList())
     }
     
-    /**
-     * 根据 seniorId 获取对应的 Firebase Auth UID
-     * 通过查询 users 集合，找到 seniorId 字段匹配的文档
-     */
     override suspend fun getSeniorAuthUid(seniorId: String): Result<String?> {
         return try {
-            android.util.Log.d("SeniorRepo", "Getting Auth UID for seniorId: $seniorId")
+            Log.d(TAG, "Getting Auth UID for seniorId: $seniorId")
             
             val snapshot = firestore.collection("users")
                 .whereEqualTo("seniorId", seniorId)
                 .limit(1)
-                .get()
-                .await()
+                .get().await()
             
             val uid = snapshot.documents.firstOrNull()?.id
-            
-            if (uid != null) {
-                android.util.Log.d("SeniorRepo", "Found UID: $uid for seniorId: $seniorId")
-            } else {
-                android.util.Log.w("SeniorRepo", "No UID found for seniorId: $seniorId")
-            }
+            Log.d(TAG, if (uid != null) "Found UID: $uid" else "No UID found for seniorId: $seniorId")
             
             Result.success(uid)
         } catch (e: Exception) {
-            android.util.Log.e("SeniorRepo", "Error getting UID for seniorId $seniorId: ${e.message}", e)
+            Log.e(TAG, "Error getting UID for seniorId $seniorId", e)
             Result.failure(e)
         }
     }

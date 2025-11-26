@@ -164,7 +164,7 @@ fun RoleCard(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .height(120.dp),
+            .height(140.dp),  // ⭐ 增加高度从120.dp到140.dp
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
@@ -172,11 +172,12 @@ fun RoleCard(
             modifier = Modifier
                 .fillMaxSize()
                 .background(backgroundColor)
-                .padding(24.dp)
+                .padding(horizontal = 24.dp, vertical = 20.dp)  // ⭐ 调整padding
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(20.dp)
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                modifier = Modifier.fillMaxHeight()  // ⭐ 确保Row填充高度
             ) {
                 // Icon Circle
                 Box(
@@ -196,20 +197,22 @@ fun RoleCard(
                 
                 // Text Content
                 Column(
+                    modifier = Modifier.weight(1f),  // ⭐ 让Column占据剩余空间
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
                         text = title,
-                        fontSize = 28.sp,
+                        fontSize = 26.sp,  // ⭐ 稍微减小标题字体
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))  // ⭐ 增加间距
                     Text(
                         text = subtitle,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,  // ⭐ 稍微减小副标题字体
                         color = Color.White.copy(alpha = 0.95f),
-                        lineHeight = 20.sp
+                        lineHeight = 18.sp,  // ⭐ 调整行高
+                        maxLines = 2  // ⭐ 限制最多2行
                     )
                 }
             }

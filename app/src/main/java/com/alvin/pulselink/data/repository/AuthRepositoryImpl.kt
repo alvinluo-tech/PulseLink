@@ -1,5 +1,6 @@
 package com.alvin.pulselink.data.repository
 
+import com.alvin.pulselink.core.constants.AuthConstants
 import com.alvin.pulselink.data.local.LocalDataSource
 import com.alvin.pulselink.domain.model.User
 import com.alvin.pulselink.domain.model.UserRole
@@ -19,13 +20,24 @@ class AuthRepositoryImpl @Inject constructor(
 ) : AuthRepository {
     
     /**
-     * 登录
+     * 登录（支持邮箱或 Senior ID）
      */
     override suspend fun login(email: String, password: String): Result<Unit> {
         return try {
+            // 自动识别输入类型：如果是 SNR-ID 格式，转换为虚拟邮箱
+            val loginEmail = if (email.matches(AuthConstants.SNR_ID_REGEX)) {
+                // Senior ID 格式 -> 转换为虚拟邮箱
+                AuthConstants.generateVirtualEmail(email)
+            } else {
+                // 普通邮箱格式
+                email
+            }
+            
+            android.util.Log.d("AuthRepo", "Login with: input=$email, converted=$loginEmail")
+            
             // 登录阶段设置总体超时，避免网络问题导致长时间卡住
             val authResult = withTimeout(15_000) {
-                firebaseAuth.signInWithEmailAndPassword(email, password).await()
+                firebaseAuth.signInWithEmailAndPassword(loginEmail, password).await()
             }
             val user = authResult.user ?: throw Exception("Login failed")
             
@@ -58,6 +70,16 @@ class AuthRepositoryImpl @Inject constructor(
                     finalRole = userRole.lowercase()
                 } else {
                     // 创建用户文档（如果不存在）
+                    // ⭐ 如果是 senior，需要提取 seniorId 从邮箱或从 seniors 集合
+                    var seniorIdForDoc: String? = null
+                    if (role == "SENIOR") {
+                        // 从邮箱中提取 SNR-ID
+                        seniorIdForDoc = AuthConstants.extractSeniorIdFromEmail(loginEmail)
+                        if (seniorIdForDoc != null) {
+                            userId = seniorIdForDoc  // ⭐ 使用 seniorId
+                        }
+                    }
+                    
                     val newUserDoc = hashMapOf(
                         "uid" to user.uid,
                         "email" to user.email,
@@ -66,6 +88,12 @@ class AuthRepositoryImpl @Inject constructor(
                         "createdAt" to System.currentTimeMillis(),
                         "emailVerified" to user.isEmailVerified
                     )
+                    
+                    // ⭐ 为 senior 添加 seniorId 字段
+                    if (seniorIdForDoc != null) {
+                        newUserDoc["seniorId"] = seniorIdForDoc
+                    }
+                    
                     withTimeout(8_000) {
                         firestore.collection("users")
                             .document(user.uid)
@@ -93,7 +121,7 @@ class AuthRepositoryImpl @Inject constructor(
     }
     
     /**
-     * 注册（自动发送验证邮件）
+     * 注册（自动发送验证邮件）- Caregiver 注册
      */
     override suspend fun register(
         email: String,
@@ -143,6 +171,126 @@ class AuthRepositoryImpl @Inject constructor(
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+    
+    /**
+     * 老人自主注册（需要额外的年龄和性别信息）
+     */
+    override suspend fun registerSenior(
+        email: String,
+        password: String,
+        name: String,
+        age: Int,
+        gender: String
+    ): Result<Unit> {
+        return try {
+            // 1. 创建 Firebase Auth 账号
+            val authResult = withTimeout(15_000) {
+                firebaseAuth.createUserWithEmailAndPassword(email, password).await()
+            }
+            val user = authResult.user ?: throw Exception("User creation failed")
+            
+            // 2. 生成唯一的 seniorId (SNR-XXXXXXXXXXXX)
+            val seniorId = generateSeniorId()
+            
+            // 3. 发送验证邮件
+            runCatching {
+                withTimeout(8_000) { user.sendEmailVerification().await() }
+            }
+            
+            // 4. 更新 Firebase User Profile
+            runCatching {
+                val profileUpdates = com.google.firebase.auth.UserProfileChangeRequest.Builder()
+                    .setDisplayName("$name|SENIOR")
+                    .build()
+                withTimeout(8_000) { user.updateProfile(profileUpdates).await() }
+            }
+            
+            // 5. 写入 Firestore users 文档
+            val userDoc = hashMapOf(
+                "uid" to user.uid,
+                "email" to email,
+                "username" to name,
+                "role" to "SENIOR",
+                "seniorId" to seniorId,  // ⭐ 关键字段
+                "createdAt" to System.currentTimeMillis(),
+                "emailVerified" to false
+            )
+            withTimeout(10_000) {
+                firestore.collection("users")
+                    .document(user.uid)
+                    .set(userDoc)
+                    .await()
+            }
+            
+            // 6. 写入 Firestore seniors 文档
+            val avatarType = determineAvatarType(age, gender)
+            val seniorDoc = hashMapOf(
+                "id" to seniorId,
+                "name" to name,
+                "age" to age,
+                "gender" to gender,
+                "avatarType" to avatarType,
+                "healthHistory" to mapOf<String, Any>(),
+                "caregiverIds" to emptyList<String>(),  // 自主注册时为空
+                "caregiverRelationships" to mapOf<String, Any>(),
+                "creatorId" to user.uid,  // 自己是创建者
+                "createdAt" to System.currentTimeMillis(),
+                "password" to password,  // 存储密码用于生成二维码（实际项目中应加密）
+                "registrationType" to "SELF_REGISTERED",  // ⭐ 标记为自主注册
+                "linkRequestApprovers" to emptyList<String>()  // ⭐ 自注册时为空（老人自己有隐式权限）
+            )
+            withTimeout(10_000) {
+                firestore.collection("seniors")
+                    .document(seniorId)
+                    .set(seniorDoc)
+                    .await()
+            }
+            
+            android.util.Log.d("AuthRepo", "Senior registered: seniorId=$seniorId, name=$name, age=$age")
+            
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e("AuthRepo", "Senior registration failed: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * 生成唯一的 Senior ID (SNR-XXXXXXXXXXXX)
+     * 使用时间戳 + 随机数保证唯一性
+     * 
+     * 格式说明：
+     * - 时间戳转36进制（压缩表示，字符集：0-9A-Z）
+     * - 4位随机大写字母
+     * - 总长度：SNR- + 8位（时间戳部分取后缀） + 4位随机 = 12-16字符
+     * 
+     * 示例：SNR-KXM2VQW7ABCD
+     */
+    private fun generateSeniorId(): String {
+        // 时间戳转36进制并转大写（36进制：0-9 + A-Z）
+        val timestamp = System.currentTimeMillis().toString(36).uppercase()
+        
+        // 4位随机大写字母
+        val random = (1..4).map { ('A'..'Z').random() }.joinToString("")
+        
+        // 拼接并取后12位（确保长度一致性）
+        // 格式：SNR-{时间戳8位}{随机4位}
+        val combined = timestamp + random
+        return "SNR-${combined.takeLast(12)}"
+    }
+    
+    /**
+     * 根据年龄和性别确定头像类型
+     */
+    private fun determineAvatarType(age: Int, gender: String): String {
+        return when {
+            age >= 60 && gender.equals("Male", ignoreCase = true) -> "ELDERLY_MALE"
+            age >= 60 && gender.equals("Female", ignoreCase = true) -> "ELDERLY_FEMALE"
+            gender.equals("Male", ignoreCase = true) -> "ADULT_MALE"
+            gender.equals("Female", ignoreCase = true) -> "ADULT_FEMALE"
+            else -> "ELDERLY_MALE"
         }
     }
     
@@ -206,12 +354,20 @@ class AuthRepositoryImpl @Inject constructor(
                 .await()
             
             if (document.exists()) {
+                val role = document.getString("role") ?: "SENIOR"
+                // ⭐ 对于 Senior 用户，使用 seniorId 作为 ID
+                val userId = if (role == "SENIOR") {
+                    document.getString("seniorId") ?: uid
+                } else {
+                    uid
+                }
+                
                 User(
-                    id = uid,
+                    id = userId,
                     email = document.getString("email") ?: firebaseUser.email ?: "",
                     name = document.getString("username") ?: "",
                     username = document.getString("username") ?: "",
-                    role = UserRole.valueOf(document.getString("role") ?: "SENIOR")
+                    role = UserRole.valueOf(role)
                 )
             } else {
                 // 如果 Firestore 中没有，从 User Profile 解析

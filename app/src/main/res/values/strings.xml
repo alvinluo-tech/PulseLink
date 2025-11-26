@@ -17,6 +17,7 @@
     <string name="login_welcome_back">Welcome back!</string>
     <string name="login_username_label">Email</string>
     <string name="login_username_hint">Enter your email address</string>
+    <string name="senior_login_username_hint">Email or Senior ID (SNR-XXXXXXXXXXXX)</string>
     <string name="login_password_label">Password</string>
     <string name="login_password_hint">Enter your password</string>
     <string name="login_terms_agreement">I agree to the Privacy Policy and Terms of Service</string>

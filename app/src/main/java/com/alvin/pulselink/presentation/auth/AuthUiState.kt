@@ -17,6 +17,10 @@ data class AuthUiState(
     val phoneNumber: String = "",
     val confirmPassword: String = "",
     
+    // 老人注册专用字段
+    val age: Int = 0,
+    val gender: String = "",  // "Male" or "Female"
+    
     // 状态
     val isLoading: Boolean = false,
     val isSuccess: Boolean = false,
@@ -30,6 +34,8 @@ data class AuthUiState(
     val passwordError: String? = null,
     val confirmPasswordError: String? = null,
     val virtualIdError: String? = null,
+    val ageError: String? = null,
+    val genderError: String? = null,
     
     // 注册成功标志
     val registrationSuccess: Boolean = false

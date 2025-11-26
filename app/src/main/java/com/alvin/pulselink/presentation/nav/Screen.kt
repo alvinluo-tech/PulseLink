@@ -59,8 +59,14 @@ sealed class Screen(val route: String) {
     /** 老人个人资料 */
     object SeniorProfile : Screen("senior/profile")
     
+    /** 老人端链接请求审批（Link Guard） */
+    object SeniorLinkGuard : Screen("senior/link_guard")
+    
     /** 老人端设置 */
     object SeniorSettings : Screen("senior/settings")
+    
+    /** 老人端权限管理 */
+    object PermissionManagement : Screen("senior/permission_management")
     
     // ===== 子女端专属功能流 =====
     /** 子女端主页（仪表盘） */
