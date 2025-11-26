@@ -1,52 +1,11 @@
 {
   "indexes": [
     {
-      "collectionGroup": "seniors",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "creatorId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "seniors",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "caregiverIds", "arrayConfig": "CONTAINS" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "linkRequests",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "requesterId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "linkRequests",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "seniorId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "senior_profiles",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "creatorId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "senior_profiles",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" }
       ]
     },
     {
@@ -62,7 +21,7 @@
       "collectionGroup": "caregiver_relations",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "seniorProfileId", "order": "ASCENDING" },
+        { "fieldPath": "seniorId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
@@ -71,7 +30,7 @@
       "collectionGroup": "health_records",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "seniorProfileId", "order": "ASCENDING" },
+        { "fieldPath": "seniorId", "order": "ASCENDING" },
         { "fieldPath": "recordedAt", "order": "DESCENDING" }
       ]
     },
@@ -79,7 +38,7 @@
       "collectionGroup": "health_records",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "seniorProfileId", "order": "ASCENDING" },
+        { "fieldPath": "seniorId", "order": "ASCENDING" },
         { "fieldPath": "type", "order": "ASCENDING" },
         { "fieldPath": "recordedAt", "order": "DESCENDING" }
       ]

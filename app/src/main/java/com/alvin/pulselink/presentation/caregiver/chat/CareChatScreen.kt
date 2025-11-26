@@ -227,15 +227,10 @@ private fun ChatLovedOneCard(
             
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = lovedOne.name,
+                    text = "${lovedOne.nickname}(${lovedOne.name})",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF2C3E50)
-                )
-                Text(
-                    text = lovedOne.relationship,
-                    fontSize = 15.sp,
-                    color = Color(0xFF6B7280)
                 )
             }
             

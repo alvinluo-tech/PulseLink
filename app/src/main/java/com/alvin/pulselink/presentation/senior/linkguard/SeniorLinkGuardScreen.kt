@@ -19,7 +19,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.alvin.pulselink.domain.model.LinkRequest
+import com.alvin.pulselink.domain.model.CaregiverRelation
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -253,10 +253,10 @@ private fun EmptyBoundCaregiversState(modifier: Modifier = Modifier) {
 
 @Composable
 private fun LinkRequestsList(
-    requests: List<LinkRequest>,
+    requests: List<CaregiverRelation>,
     isProcessing: Boolean,
-    onApprove: (LinkRequest) -> Unit,
-    onReject: (LinkRequest) -> Unit
+    onApprove: (CaregiverRelation) -> Unit,
+    onReject: (CaregiverRelation) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -280,7 +280,7 @@ private fun LinkRequestsList(
 
 @Composable
 private fun LinkRequestCard(
-    request: LinkRequest,
+    request: CaregiverRelation,
     isProcessing: Boolean,
     onApprove: () -> Unit,
     onReject: () -> Unit
@@ -684,10 +684,9 @@ private fun BoundCaregiverCard(
                         modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        PermissionItem("View Health Data", caregiver.permissions.canViewHealthData)
-                        PermissionItem("View Reminders", caregiver.permissions.canViewReminders)
-                        PermissionItem("Edit Reminders", caregiver.permissions.canEditReminders)
-                        PermissionItem("Approve Link Requests", caregiver.permissions.canApproveLinkRequests)
+                        PermissionItem("View Health Data", caregiver.canViewHealthData)
+                        PermissionItem("Edit Health Data", caregiver.canEditHealthData)
+                        PermissionItem("Approve Link Requests", caregiver.canApproveRequests)
                     }
                 }
             }

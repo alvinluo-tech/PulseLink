@@ -20,7 +20,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.alvin.pulselink.domain.model.LinkRequest
 import com.alvin.pulselink.util.AvatarHelper
 import java.text.SimpleDateFormat
 import java.util.*
@@ -139,9 +138,9 @@ private fun HistoryList(history: List<LinkHistoryItem>) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Group by status
-        val pending = history.filter { it.request.status == "pending" }
-        val approved = history.filter { it.request.status == "approved" }
-        val rejected = history.filter { it.request.status == "rejected" }
+        val pending = history.filter { it.relation.status == "pending" }
+        val approved = history.filter { it.relation.status == "active" }
+        val rejected = history.filter { it.relation.status == "rejected" }
         
         // Pending section
         if (pending.isNotEmpty()) {
@@ -202,24 +201,25 @@ private fun SectionHeader(title: String, color: Color) {
 
 @Composable
 private fun HistoryCard(item: LinkHistoryItem) {
-    val request = item.request
-    val statusColor = when (request.status) {
+    val relation = item.relation
+    val displayStatus = if (relation.status == "active") "approved" else relation.status
+    val statusColor = when (relation.status) {
         "pending" -> Color(0xFFFBBF24)
-        "approved" -> Color(0xFF22C55E)
+        "active" -> Color(0xFF22C55E)
         "rejected" -> Color(0xFFEF4444)
         else -> Color(0xFF9CA3AF)
     }
     
-    val statusBgColor = when (request.status) {
+    val statusBgColor = when (relation.status) {
         "pending" -> Color(0xFFFFFBEB)
-        "approved" -> Color(0xFFDCFCE7)
+        "active" -> Color(0xFFDCFCE7)
         "rejected" -> Color(0xFFFEE2E2)
         else -> Color(0xFFF3F4F6)
     }
     
-    val statusIcon = when (request.status) {
+    val statusIcon = when (relation.status) {
         "pending" -> Icons.Default.Schedule
-        "approved" -> Icons.Default.CheckCircle
+        "active" -> Icons.Default.CheckCircle
         "rejected" -> Icons.Default.Cancel
         else -> Icons.Default.Info
     }
@@ -269,12 +269,12 @@ private fun HistoryCard(item: LinkHistoryItem) {
                             color = Color(0xFF111827)
                         )
                         Text(
-                            text = request.seniorId,
+                            text = relation.seniorId,
                             fontSize = 12.sp,
                             color = Color(0xFF7C3AED)
                         )
                         Text(
-                            text = "As ${request.relationship}",
+                            text = "As ${relation.relationship}",
                             fontSize = 13.sp,
                             color = Color(0xFF64748B)
                         )
@@ -298,7 +298,7 @@ private fun HistoryCard(item: LinkHistoryItem) {
                             tint = Color.White
                         )
                         Text(
-                            request.status.replaceFirstChar { it.uppercase() },
+                            displayStatus.replaceFirstChar { it.uppercase() },
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White
@@ -308,7 +308,7 @@ private fun HistoryCard(item: LinkHistoryItem) {
             }
             
             // Nickname if exists
-            if (request.nickname.isNotBlank()) {
+            if (relation.nickname.isNotBlank()) {
                 Spacer(Modifier.height(12.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -321,7 +321,7 @@ private fun HistoryCard(item: LinkHistoryItem) {
                         tint = Color(0xFF8B5CF6)
                     )
                     Text(
-                        "Nickname: ${request.nickname}",
+                        "Nickname: ${relation.nickname}",
                         fontSize = 13.sp,
                         color = Color(0xFF64748B)
                     )
@@ -329,7 +329,7 @@ private fun HistoryCard(item: LinkHistoryItem) {
             }
             
             // Message if exists
-            if (request.message.isNotBlank()) {
+            if (relation.message.isNotBlank()) {
                 Spacer(Modifier.height(12.dp))
                 Surface(
                     shape = RoundedCornerShape(8.dp),
@@ -344,7 +344,7 @@ private fun HistoryCard(item: LinkHistoryItem) {
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            request.message,
+                            relation.message,
                             fontSize = 13.sp,
                             color = Color(0xFF64748B)
                         )
@@ -361,9 +361,12 @@ private fun HistoryCard(item: LinkHistoryItem) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                TimeInfo("Requested", request.createdAt)
-                if (request.status != "pending") {
-                    TimeInfo("Updated", request.updatedAt)
+                TimeInfo("Requested", relation.createdAt)
+                when {
+                    relation.status == "active" && relation.approvedAt != null -> 
+                        TimeInfo("Approved", relation.approvedAt)
+                    relation.status == "rejected" && relation.rejectedAt != null -> 
+                        TimeInfo("Rejected", relation.rejectedAt)
                 }
             }
         }
@@ -392,12 +395,3 @@ private fun formatTimestamp(timestamp: Long): String {
     val formatter = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
     return formatter.format(date)
 }
-
-/**
- * Link history item with enriched senior info
- */
-data class LinkHistoryItem(
-    val request: LinkRequest,
-    val seniorName: String = "",
-    val seniorAvatarType: String = ""
-)

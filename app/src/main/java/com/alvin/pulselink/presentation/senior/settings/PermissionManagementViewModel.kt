@@ -3,10 +3,9 @@ package com.alvin.pulselink.presentation.senior.settings
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.alvin.pulselink.domain.model.CaregiverPermissions
-import com.alvin.pulselink.domain.model.CaregiverRelationship
+import com.alvin.pulselink.domain.model.CaregiverRelation
 import com.alvin.pulselink.domain.repository.AuthRepository
-import com.alvin.pulselink.domain.repository.SeniorRepository
+import com.alvin.pulselink.domain.repository.CaregiverRelationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,11 +20,10 @@ import javax.inject.Inject
  * 功能：
  * - 加载已绑定的 caregivers
  * - 更新 caregiver 权限
- * - 管理 linkRequestApprovers 列表
  */
 @HiltViewModel
 class PermissionManagementViewModel @Inject constructor(
-    private val seniorRepository: SeniorRepository,
+    private val caregiverRelationRepository: CaregiverRelationRepository,
     private val authRepository: AuthRepository
 ) : ViewModel() {
 
@@ -66,20 +64,20 @@ class PermissionManagementViewModel @Inject constructor(
 
                 Log.d(TAG, "Loading bound caregivers for senior: $seniorId")
 
-                seniorRepository.getSeniorById(seniorId)
-                    .onSuccess { senior ->
-                        // 过滤出已激活的 caregivers
-                        val boundCaregivers = senior.caregiverRelationships
-                            .filter { it.value.status == "active" }
-                            .map { (caregiverId, relationship) ->
-                                BoundCaregiverWithPermissions(
-                                    caregiverId = caregiverId,
-                                    relationship = relationship.relationship,
-                                    nickname = relationship.nickname,
-                                    permissions = relationship.permissions,
-                                    canApprove = relationship.permissions.canApproveLinkRequests // ⭐ 从 permissions 字段读取
-                                )
-                            }
+                caregiverRelationRepository.getActiveRelationsBySenior(seniorId)
+                    .onSuccess { relations ->
+                        val boundCaregivers = relations.map { relation ->
+                            BoundCaregiverWithPermissions(
+                                caregiverId = relation.caregiverId,
+                                relationship = relation.relationship,
+                                nickname = relation.nickname,
+                                canViewHealthData = relation.canViewHealthData,
+                                canEditHealthData = relation.canEditHealthData,
+                                canViewReminders = relation.canViewReminders,
+                                canEditReminders = relation.canEditReminders,
+                                canApprove = relation.canApproveRequests
+                            )
+                        }
 
                         Log.d(TAG, "Loaded ${boundCaregivers.size} bound caregivers")
                         _uiState.update {
@@ -116,7 +114,10 @@ class PermissionManagementViewModel @Inject constructor(
      */
     fun updatePermissions(
         caregiverId: String,
-        permissions: CaregiverPermissions,
+        canViewHealthData: Boolean,
+        canEditHealthData: Boolean,
+        canViewReminders: Boolean,
+        canEditReminders: Boolean,
         canApprove: Boolean
     ) {
         viewModelScope.launch {
@@ -136,51 +137,28 @@ class PermissionManagementViewModel @Inject constructor(
 
                 Log.d(TAG, "Updating permissions for caregiver: $caregiverId")
 
-                // 获取当前 senior 数据
-                seniorRepository.getSeniorById(seniorId)
-                    .onSuccess { senior ->
-                        // 更新 caregiverRelationships 中的权限
-                        val updatedRelationships = senior.caregiverRelationships.toMutableMap()
-                        val currentRelationship = updatedRelationships[caregiverId]
-
-                        if (currentRelationship != null) {
-                            updatedRelationships[caregiverId] = currentRelationship.copy(
-                                permissions = permissions.copy(
-                                    canApproveLinkRequests = canApprove // ⭐ 同步更新这个字段
-                                )
-                            )
-                        }
-
-                        // 保存更新
-                        val updatedSenior = senior.copy(
-                            caregiverRelationships = updatedRelationships
+                val relationId = CaregiverRelation.generateId(caregiverId, seniorId)
+                
+                caregiverRelationRepository.updatePermissions(
+                    relationId = relationId,
+                    canViewHealthData = canViewHealthData,
+                    canEditHealthData = canEditHealthData,
+                    canViewReminders = canViewReminders,
+                    canEditReminders = canEditReminders,
+                    canApproveRequests = canApprove
+                ).onSuccess {
+                    Log.d(TAG, "Permissions updated successfully")
+                    // 重新加载数据
+                    loadBoundCaregivers()
+                }.onFailure { error ->
+                    Log.e(TAG, "Failed to update permissions", error)
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = "更新失败: ${error.message}"
                         )
-
-                        seniorRepository.updateSenior(updatedSenior)
-                            .onSuccess {
-                                Log.d(TAG, "Permissions updated successfully")
-                                // 重新加载数据
-                                loadBoundCaregivers()
-                            }
-                            .onFailure { error ->
-                                Log.e(TAG, "Failed to update permissions", error)
-                                _uiState.update {
-                                    it.copy(
-                                        isLoading = false,
-                                        errorMessage = "更新失败: ${error.message}"
-                                    )
-                                }
-                            }
                     }
-                    .onFailure { error ->
-                        Log.e(TAG, "Failed to get senior data", error)
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                errorMessage = "获取数据失败: ${error.message}"
-                            )
-                        }
-                    }
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error updating permissions", e)
                 _uiState.update {
@@ -211,6 +189,9 @@ data class BoundCaregiverWithPermissions(
     val caregiverId: String,
     val relationship: String,
     val nickname: String,
-    val permissions: CaregiverPermissions,
-    val canApprove: Boolean // ⭐ 是否在 linkRequestApprovers 列表中
+    val canViewHealthData: Boolean,
+    val canEditHealthData: Boolean,
+    val canViewReminders: Boolean,
+    val canEditReminders: Boolean,
+    val canApprove: Boolean
 )

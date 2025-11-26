@@ -28,7 +28,7 @@ class HealthRecordRepositoryImpl @Inject constructor(
         return try {
             HealthRecord(
                 id = getString("id") ?: "",
-                seniorProfileId = getString("seniorProfileId") ?: "",
+                seniorId = getString("seniorId") ?: "",
                 type = getString("type") ?: HealthRecord.TYPE_BLOOD_PRESSURE,
                 recordedAt = getLong("recordedAt") ?: 0L,
                 recordedBy = getString("recordedBy") ?: "",
@@ -48,7 +48,7 @@ class HealthRecordRepositoryImpl @Inject constructor(
     private fun HealthRecord.toFirestoreMap(): Map<String, Any?> {
         return hashMapOf(
             "id" to id,
-            "seniorProfileId" to seniorProfileId,
+            "seniorId" to seniorId,
             "type" to type,
             "recordedAt" to recordedAt,
             "recordedBy" to recordedBy,
@@ -107,7 +107,7 @@ class HealthRecordRepositoryImpl @Inject constructor(
     ): Result<List<HealthRecord>> {
         return try {
             var query = recordsCollection
-                .whereEqualTo("seniorProfileId", seniorProfileId)
+                .whereEqualTo("seniorId", seniorProfileId)
                 .orderBy("recordedAt", Query.Direction.DESCENDING)
                 .limit(limit.toLong())
             
@@ -133,7 +133,7 @@ class HealthRecordRepositoryImpl @Inject constructor(
     ): Result<List<HealthRecord>> {
         return try {
             var query = recordsCollection
-                .whereEqualTo("seniorProfileId", seniorProfileId)
+                .whereEqualTo("seniorId", seniorProfileId)
                 .whereEqualTo("type", type)
                 .orderBy("recordedAt", Query.Direction.DESCENDING)
                 .limit(limit.toLong())
@@ -154,6 +154,8 @@ class HealthRecordRepositoryImpl @Inject constructor(
     
     override suspend fun getLatestRecords(seniorProfileId: String): Result<List<HealthRecord>> {
         return try {
+            Log.d(TAG, "getLatestRecords for seniorId: $seniorProfileId")
+            
             val types = listOf(
                 HealthRecord.TYPE_BLOOD_PRESSURE,
                 HealthRecord.TYPE_HEART_RATE,
@@ -165,43 +167,55 @@ class HealthRecordRepositoryImpl @Inject constructor(
             
             for (type in types) {
                 val snapshot = recordsCollection
-                    .whereEqualTo("seniorProfileId", seniorProfileId)
+                    .whereEqualTo("seniorId", seniorProfileId)
                     .whereEqualTo("type", type)
                     .orderBy("recordedAt", Query.Direction.DESCENDING)
                     .limit(1)
                     .get().await()
                 
                 snapshot.documents.firstOrNull()?.toHealthRecord()?.let {
+                    Log.d(TAG, "  Found $type record: systolic=${it.systolic}, diastolic=${it.diastolic}, heartRate=${it.heartRate}")
                     latestRecords.add(it)
                 }
             }
             
+            Log.d(TAG, "Total latest records found: ${latestRecords.size}")
             Result.success(latestRecords)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to get latest records", e)
+            Log.e(TAG, "Failed to get latest records for $seniorProfileId: ${e.message}", e)
             Result.failure(e)
         }
     }
     
     override suspend fun getHealthSummary(seniorProfileId: String): Result<HealthSummary> {
         return try {
+            Log.d(TAG, "getHealthSummary for seniorId: $seniorProfileId")
+            
             val latestRecordsResult = getLatestRecords(seniorProfileId)
             if (latestRecordsResult.isFailure) {
+                Log.e(TAG, "getLatestRecords failed: ${latestRecordsResult.exceptionOrNull()?.message}")
                 return Result.failure(latestRecordsResult.exceptionOrNull()!!)
             }
             
             val latestRecords = latestRecordsResult.getOrNull() ?: emptyList()
+            Log.d(TAG, "getHealthSummary - Got ${latestRecords.size} latest records")
+            
+            val bpRecord = latestRecords.find { it.type == HealthRecord.TYPE_BLOOD_PRESSURE }
+            val hrRecord = latestRecords.find { it.type == HealthRecord.TYPE_HEART_RATE }
+            
+            Log.d(TAG, "getHealthSummary - BP record: $bpRecord")
+            Log.d(TAG, "getHealthSummary - HR record: $hrRecord")
             
             val summary = HealthSummary(
-                seniorProfileId = seniorProfileId,
-                latestBloodPressure = latestRecords.find { it.type == HealthRecord.TYPE_BLOOD_PRESSURE },
-                latestHeartRate = latestRecords.find { it.type == HealthRecord.TYPE_HEART_RATE },
+                seniorId = seniorProfileId,
+                latestBloodPressure = bpRecord,
+                latestHeartRate = hrRecord,
                 latestBloodSugar = latestRecords.find { it.type == HealthRecord.TYPE_BLOOD_SUGAR }
             )
             
             Result.success(summary)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to get health summary", e)
+            Log.e(TAG, "Failed to get health summary for $seniorProfileId: ${e.message}", e)
             Result.failure(e)
         }
     }
@@ -214,7 +228,7 @@ class HealthRecordRepositoryImpl @Inject constructor(
     ): Result<List<HealthRecord>> {
         return try {
             val snapshot = recordsCollection
-                .whereEqualTo("seniorProfileId", seniorProfileId)
+                .whereEqualTo("seniorId", seniorProfileId)
                 .whereEqualTo("type", type)
                 .whereGreaterThanOrEqualTo("recordedAt", startTime)
                 .whereLessThanOrEqualTo("recordedAt", endTime)
@@ -274,7 +288,7 @@ class HealthRecordRepositoryImpl @Inject constructor(
     override suspend fun deleteAllRecords(seniorProfileId: String): Result<Unit> {
         return try {
             val snapshot = recordsCollection
-                .whereEqualTo("seniorProfileId", seniorProfileId)
+                .whereEqualTo("seniorId", seniorProfileId)
                 .get().await()
             
             val batch = firestore.batch()

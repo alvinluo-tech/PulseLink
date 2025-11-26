@@ -111,9 +111,57 @@ class AuthRepositoryImpl @Inject constructor(
                 username = finalUsername,
                 role = finalRole
             )
-            
+
             android.util.Log.d("AuthRepo", "Login success: id=$userId, username=$finalUsername, role=$finalRole")
-            
+
+            // ⭐ 绑定/迁移：确保 senior_profiles 中的 userId 绑定当前登录 UID
+            if (finalRole == "senior") {
+                runCatching {
+                    withTimeout(8_000) {
+                        val profileRef = firestore.collection("senior_profiles").document(userId)
+                        val profileDoc = profileRef.get().await()
+                        if (profileDoc.exists()) {
+                            val boundUid = profileDoc.getString("userId")
+                            if (boundUid == null || boundUid != user.uid) {
+                                android.util.Log.d("AuthRepo", "Binding senior_profiles.userId → ${user.uid} for profile ${userId}")
+                                profileRef.update("userId", user.uid).await()
+                            }
+                        } else {
+                            // 档案不存在，尝试从 legacy seniors 迁移到 senior_profiles
+                            android.util.Log.w("AuthRepo", "senior_profiles/${userId} not found, trying migrate from seniors/${userId}")
+                            val legacy = firestore.collection("seniors").document(userId).get().await()
+                            if (legacy.exists()) {
+                                val name = legacy.getString("name") ?: finalUsername
+                                val age = (legacy.getLong("age") ?: 0L).toInt()
+                                val gender = legacy.getString("gender") ?: ""
+                                val avatarType = legacy.getString("avatarType") ?: determineAvatarType(age, gender)
+                                val creatorId = legacy.getString("creatorId") ?: user.uid
+                                val createdAt = legacy.getLong("createdAt") ?: System.currentTimeMillis()
+                                val registrationType = "SELF_REGISTERED"
+
+                                val newProfile = hashMapOf(
+                                    "id" to userId,
+                                    "userId" to user.uid,
+                                    "name" to name,
+                                    "age" to age,
+                                    "gender" to gender,
+                                    "avatarType" to avatarType,
+                                    "creatorId" to creatorId,
+                                    "createdAt" to createdAt,
+                                    "registrationType" to registrationType
+                                )
+                                android.util.Log.d("AuthRepo", "Migrating seniors/${userId} → senior_profiles/${userId}")
+                                profileRef.set(newProfile).await()
+                            } else {
+                                android.util.Log.w("AuthRepo", "No legacy seniors/${userId} found; skip creating profile")
+                            }
+                        }
+                    }
+                }.onFailure { e ->
+                    android.util.Log.w("AuthRepo", "Bind/migrate senior profile failed: ${e.message}", e)
+                }
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -224,28 +272,41 @@ class AuthRepositoryImpl @Inject constructor(
                     .await()
             }
             
-            // 6. 写入 Firestore seniors 文档
+            // 6. 写入 Firestore senior_profiles 文档（新架构）
             val avatarType = determineAvatarType(age, gender)
-            val seniorDoc = hashMapOf(
+            val profileDoc = hashMapOf(
                 "id" to seniorId,
+                "userId" to user.uid,              // 绑定当前 Auth UID
                 "name" to name,
                 "age" to age,
                 "gender" to gender,
                 "avatarType" to avatarType,
-                "healthHistory" to mapOf<String, Any>(),
-                "caregiverIds" to emptyList<String>(),  // 自主注册时为空
-                "caregiverRelationships" to mapOf<String, Any>(),
-                "creatorId" to user.uid,  // 自己是创建者
+                "creatorId" to user.uid,           // 自己是创建者
                 "createdAt" to System.currentTimeMillis(),
-                "password" to password,  // 存储密码用于生成二维码（实际项目中应加密）
-                "registrationType" to "SELF_REGISTERED",  // ⭐ 标记为自主注册
-                "linkRequestApprovers" to emptyList<String>()  // ⭐ 自注册时为空（老人自己有隐式权限）
+                "registrationType" to "SELF_REGISTERED"
             )
             withTimeout(10_000) {
-                firestore.collection("seniors")
+                firestore.collection("senior_profiles")
                     .document(seniorId)
-                    .set(seniorDoc)
+                    .set(profileDoc)
                     .await()
+            }
+
+            // 7. 写入密码到独立集合 senior_passwords（与规则一致）
+            val passwordDoc = hashMapOf(
+                "profileId" to seniorId,
+                "password" to password,
+                "createdAt" to System.currentTimeMillis()
+            )
+            runCatching {
+                withTimeout(8_000) {
+                    firestore.collection("senior_passwords")
+                        .document(seniorId)
+                        .set(passwordDoc)
+                        .await()
+                }
+            }.onFailure { e ->
+                android.util.Log.w("AuthRepo", "Write senior_passwords failed: ${e.message}")
             }
             
             android.util.Log.d("AuthRepo", "Senior registered: seniorId=$seniorId, name=$name, age=$age")

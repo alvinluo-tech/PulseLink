@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.alvin.pulselink.domain.model.Senior
+import com.alvin.pulselink.domain.model.SeniorProfile
 import com.alvin.pulselink.util.AvatarHelper
 import com.alvin.pulselink.util.RelationshipHelper
 import kotlinx.coroutines.launch
@@ -192,7 +192,7 @@ private fun EmptyState(onLinkClick: () -> Unit) {
 }
 
 @Composable
-private fun LinkedSeniorsList(seniors: List<Senior>) {
+private fun LinkedSeniorsList(seniors: List<SeniorProfile>) {
     LazyColumn(
         modifier = Modifier.padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -213,26 +213,13 @@ private fun LinkedSeniorsList(seniors: List<Senior>) {
 }
 
 @Composable
-private fun LinkedSeniorCard(senior: Senior) {
+private fun LinkedSeniorCard(senior: SeniorProfile) {
     val clipboardManager = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     
-    // Get current user ID from caregiverIds
-    val currentUserId = senior.caregiverIds.firstOrNull() ?: ""
-    
-    // Get avatar emoji based on age and gender
+    // Get avatar emoji based on avatarType
     val avatarEmoji = AvatarHelper.getAvatarEmoji(senior.avatarType)
-    
-    // Get current user's relationship
-    val userRelationship = senior.caregiverRelationships[currentUserId]
-    val displayName = if (userRelationship?.nickname?.isNotBlank() == true) {
-        userRelationship.nickname
-    } else if (userRelationship?.relationship?.isNotBlank() == true) {
-        RelationshipHelper.getDefaultAddressTitle(userRelationship.relationship, senior.gender)
-    } else {
-        senior.name
-    }
     
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -265,17 +252,7 @@ private fun LinkedSeniorCard(senior: Senior) {
                             .padding(8.dp)
                     )
                     Column {
-                        Text(displayName, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text(senior.name, fontSize = 13.sp, color = Color(0xFF64748B))
-                        
-                        if (userRelationship?.relationship?.isNotBlank() == true) {
-                            Text(
-                                userRelationship.relationship,
-                                fontSize = 13.sp,
-                                color = Color(0xFF2563EB),
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
+                        Text(senior.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)

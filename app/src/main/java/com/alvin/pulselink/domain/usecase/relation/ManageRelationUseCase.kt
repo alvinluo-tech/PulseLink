@@ -67,7 +67,7 @@ class ManageRelationUseCase @Inject constructor(
         val relation = CaregiverRelation(
             id = CaregiverRelation.generateId(caregiverId, seniorProfileId),
             caregiverId = caregiverId,
-            seniorProfileId = seniorProfileId,
+            seniorId = seniorProfileId,
             status = CaregiverRelation.STATUS_PENDING,
             relationship = relationship,
             nickname = "",

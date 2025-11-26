@@ -4,10 +4,11 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.data.local.LocalDataSource
+import com.alvin.pulselink.domain.model.SeniorProfile
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.repository.HealthRepository
-import com.alvin.pulselink.domain.repository.LinkRequestRepository
-import com.alvin.pulselink.domain.repository.SeniorRepository
+import com.alvin.pulselink.domain.repository.CaregiverRelationRepository
+import com.alvin.pulselink.domain.repository.SeniorProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,9 +40,9 @@ data class CaregiverProfileUiState(
 @HiltViewModel
 class CaregiverProfileViewModel @Inject constructor(
     private val authRepository: AuthRepository,
-    private val seniorRepository: SeniorRepository,
+    private val seniorProfileRepository: SeniorProfileRepository,
     private val healthRepository: HealthRepository,
-    private val linkRequestRepository: LinkRequestRepository,
+    private val caregiverRelationRepository: CaregiverRelationRepository,
     private val localDataSource: LocalDataSource
 ) : ViewModel() {
     
@@ -87,23 +88,21 @@ class CaregiverProfileViewModel @Inject constructor(
         try {
             val currentUser = authRepository.getCurrentUser()
             if (currentUser != null) {
-                val result = linkRequestRepository.getPendingRequestsForCreator(currentUser.id)
-                result.fold(
-                    onSuccess = { linkRequests ->
-                        // 计算 pending 状态的请求总数
-                        val pendingCount = linkRequests.count { it.status == "pending" }
-                        
-                        _uiState.update { 
-                            it.copy(pendingRequestsCount = pendingCount)
-                        }
-                    },
-                    onFailure = {
-                        // 失败时保持默认值 0
-                        _uiState.update { 
-                            it.copy(pendingRequestsCount = 0)
-                        }
-                    }
-                )
+                // 获取当前用户创建的所有老人资料
+                val profilesResult = seniorProfileRepository.getProfilesByCreator(currentUser.id)
+                val createdProfiles = profilesResult.getOrNull() ?: emptyList()
+                
+                var pendingCount = 0
+                
+                // 对于每个老人资料，统计 pending 状态的关系请求
+                createdProfiles.forEach { profile ->
+                    val relationsResult = caregiverRelationRepository.getPendingRelationsBySenior(profile.id)
+                    relationsResult.getOrNull()?.size?.let { pendingCount += it }
+                }
+                
+                _uiState.update { 
+                    it.copy(pendingRequestsCount = pendingCount)
+                }
             }
         } catch (e: Exception) {
             // 异常时保持默认值 0
@@ -121,90 +120,78 @@ class CaregiverProfileViewModel @Inject constructor(
             val currentUser = authRepository.getCurrentUser()
             if (currentUser != null) {
                 Log.d("ProfileVM", "Loading seniors for caregiver: ${currentUser.id}")
-                val result = seniorRepository.getSeniorsByCaregiver(currentUser.id)
-                result.fold(
-                    onSuccess = { seniors ->
-                        Log.d("ProfileVM", "Loaded ${seniors.size} seniors")
+                
+                // 获取当前用户关联的所有老人资料（通过 caregiver_relations）
+                val relationsResult = caregiverRelationRepository.getActiveRelationsByCaregiver(currentUser.id)
+                val relations = relationsResult.getOrNull() ?: emptyList()
+                
+                Log.d("ProfileVM", "Found ${relations.size} active relations")
+                
+                // 获取所有关联老人的 profile - 使用 buildList 和 suspend 函数
+                val seniorProfiles = mutableListOf<SeniorProfile>()
+                for (relation in relations) {
+                    val profileResult = seniorProfileRepository.getProfileById(relation.seniorId)
+                    profileResult.getOrNull()?.let { seniorProfiles.add(it) }
+                }
+                
+                Log.d("ProfileVM", "Loaded ${seniorProfiles.size} senior profiles")
+                
+                // 计算管理的老人总数
+                val managedCount = seniorProfiles.size
+                
+                // 分析每个老人的健康状态
+                var goodCount = 0
+                var attentionCount = 0
+                var urgentCount = 0
+                var alertsCount = 0
+                
+                for ((index, profile) in seniorProfiles.withIndex()) {
+                    Log.d("ProfileVM", "Analyzing senior ${index + 1}: ${profile.name} (ID: ${profile.id})")
+                    
+                    // 从 health_records 集合读取最新健康数据（使用 seniorId）
+                    val seniorId = profile.id
+                    val healthDataResult = healthRepository.getLatestHealthDataBySeniorUid(seniorId)
+                    val healthData = healthDataResult.getOrNull()
+                    
+                    if (healthData != null) {
+                        Log.d("ProfileVM", "  - Blood Pressure: ${healthData.systolic}/${healthData.diastolic}")
+                        Log.d("ProfileVM", "  - Heart Rate: ${healthData.heartRate}")
                         
-                        // 计算管理的老人总数
-                        val managedCount = seniors.size
+                        val healthStatus = analyzeHealthStatusFromData(
+                            systolic = healthData.systolic,
+                            diastolic = healthData.diastolic,
+                            heartRate = healthData.heartRate
+                        )
+                        Log.d("ProfileVM", "  - Health Status: $healthStatus")
                         
-                        // 分析每个老人的健康状态
-                        var goodCount = 0
-                        var attentionCount = 0
-                        var urgentCount = 0
-                        var alertsCount = 0
-                        
-                        seniors.forEachIndexed { index, senior ->
-                            Log.d("ProfileVM", "Analyzing senior ${index + 1}: ${senior.name} (ID: ${senior.id})")
-                            
-                            // 获取老人对应的 Firebase Auth UID
-                            val uidResult = seniorRepository.getSeniorAuthUid(senior.id)
-                            val seniorUid = uidResult.getOrNull()
-                            
-                            if (seniorUid != null) {
-                                // 从 health_data 集合读取最新健康数据
-                                val healthDataResult = healthRepository.getLatestHealthDataBySeniorUid(seniorUid)
-                                val healthData = healthDataResult.getOrNull()
-                                
-                                if (healthData != null) {
-                                    Log.d("ProfileVM", "  - Blood Pressure: ${healthData.systolic}/${healthData.diastolic}")
-                                    Log.d("ProfileVM", "  - Heart Rate: ${healthData.heartRate}")
-                                    
-                                    val healthStatus = analyzeHealthStatusFromData(
-                                        systolic = healthData.systolic,
-                                        diastolic = healthData.diastolic,
-                                        heartRate = healthData.heartRate
-                                    )
-                                    Log.d("ProfileVM", "  - Health Status: $healthStatus")
-                                    
-                                    when (healthStatus) {
-                                        HealthStatus.GOOD -> goodCount++
-                                        HealthStatus.ATTENTION -> {
-                                            attentionCount++
-                                            alertsCount++
-                                        }
-                                        HealthStatus.URGENT -> {
-                                            urgentCount++
-                                            alertsCount++
-                                        }
-                                    }
-                                } else {
-                                    Log.d("ProfileVM", "  - No health data found, marking as GOOD")
-                                    goodCount++  // 没有数据时默认为 GOOD
-                                }
-                            } else {
-                                Log.w("ProfileVM", "  - Could not find Auth UID for senior ${senior.id}")
-                                goodCount++  // 找不到 UID 时默认为 GOOD
+                        when (healthStatus) {
+                            HealthStatus.GOOD -> goodCount++
+                            HealthStatus.ATTENTION -> {
+                                attentionCount++
+                                alertsCount++
+                            }
+                            HealthStatus.URGENT -> {
+                                urgentCount++
+                                alertsCount++
                             }
                         }
-                        
-                        Log.d("ProfileVM", "Summary: Good=$goodCount, Attention=$attentionCount, Urgent=$urgentCount, Alerts=$alertsCount")
-                        
-                        _uiState.update {
-                            it.copy(
-                                managedMembersCount = managedCount,
-                                goodStatusCount = goodCount,
-                                attentionCount = attentionCount,
-                                urgentCount = urgentCount,
-                                activeAlertsCount = alertsCount
-                            )
-                        }
-                    },
-                    onFailure = { error ->
-                        Log.e("ProfileVM", "Failed to load seniors: ${error.message}", error)
-                        // 失败时保持默认值
-                        _uiState.update {
-                            it.copy(
-                                managedMembersCount = 0,
-                                goodStatusCount = 0,
-                                attentionCount = 0,
-                                urgentCount = 0,
-                                activeAlertsCount = 0
-                            )
-                        }
+                    } else {
+                        Log.d("ProfileVM", "  - No health data found, marking as GOOD")
+                        goodCount++  // 没有数据时默认为 GOOD
                     }
-                )
+                }
+                
+                Log.d("ProfileVM", "Summary: Good=$goodCount, Attention=$attentionCount, Urgent=$urgentCount, Alerts=$alertsCount")
+                
+                _uiState.update {
+                    it.copy(
+                        managedMembersCount = managedCount,
+                        goodStatusCount = goodCount,
+                        attentionCount = attentionCount,
+                        urgentCount = urgentCount,
+                        activeAlertsCount = alertsCount
+                    )
+                }
             } else {
                 Log.w("ProfileVM", "Current user is null")
             }

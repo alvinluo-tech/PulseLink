@@ -35,6 +35,8 @@ class CreateSeniorProfileUseCase @Inject constructor(
      * @param avatarType 头像类型
      * @param creatorId 创建者 ID (Caregiver)
      * @param customPassword 自定义密码（可选）
+     * @param relationship Caregiver's relationship to senior (e.g., "Son", "Daughter")
+     * @param nickname Caregiver's nickname for senior (e.g., "Dad", "Mom")
      * @return 创建结果
      */
     suspend operator fun invoke(
@@ -43,7 +45,9 @@ class CreateSeniorProfileUseCase @Inject constructor(
         gender: String,
         avatarType: String = "GRANDFATHER",
         creatorId: String,
-        customPassword: String? = null
+        customPassword: String? = null,
+        relationship: String = "Son",
+        nickname: String = ""
     ): Result<SeniorProfileResult> {
         // 验证输入
         if (name.isBlank()) {
@@ -106,14 +110,14 @@ class CreateSeniorProfileUseCase @Inject constructor(
             
             Log.d(TAG, "Auth account created: email=$email")
             
-            // Step 3: 创建 Caregiver-Senior 关系（自动批准）
+            // Step 3: 创建 Caregiver-Senior 关系（自动批准，并存储密码）
             val relation = CaregiverRelation(
                 id = CaregiverRelation.generateId(creatorId, createdProfile.id),
                 caregiverId = creatorId,
-                seniorProfileId = createdProfile.id,
-                status = "approved",
-                relationship = "PRIMARY_CAREGIVER",
-                nickname = "",
+                seniorId = createdProfile.id,
+                status = CaregiverRelation.STATUS_ACTIVE,
+                relationship = relationship,  // Use provided relationship
+                nickname = nickname,  // Use provided nickname
                 canViewHealthData = true,
                 canEditHealthData = true,
                 canViewReminders = true,
@@ -121,7 +125,8 @@ class CreateSeniorProfileUseCase @Inject constructor(
                 canApproveRequests = true,
                 createdAt = System.currentTimeMillis(),
                 approvedAt = System.currentTimeMillis(),
-                approvedBy = creatorId
+                approvedBy = creatorId,
+                virtualAccountPassword = generatedPassword  // 存储密码在关系中
             )
             
             caregiverRelationRepository.createRelation(relation).getOrThrow()

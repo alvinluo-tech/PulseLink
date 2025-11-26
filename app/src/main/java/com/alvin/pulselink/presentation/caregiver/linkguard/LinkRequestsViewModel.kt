@@ -4,8 +4,8 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.domain.repository.AuthRepository
-import com.alvin.pulselink.domain.repository.LinkRequestRepository
-import com.alvin.pulselink.domain.repository.SeniorRepository
+import com.alvin.pulselink.domain.repository.CaregiverRelationRepository
+import com.alvin.pulselink.domain.repository.SeniorProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,8 +47,8 @@ data class LinkRequestsUiState(
 
 @HiltViewModel
 class LinkRequestsViewModel @Inject constructor(
-    private val linkRequestRepository: LinkRequestRepository,
-    private val seniorRepository: SeniorRepository,
+    private val caregiverRelationRepository: CaregiverRelationRepository,
+    private val seniorProfileRepository: SeniorProfileRepository,
     private val authRepository: AuthRepository
 ) : ViewModel() {
     
@@ -76,33 +76,23 @@ class LinkRequestsViewModel @Inject constructor(
                     return@launch
                 }
                 
-                // 从 linkRequests collection 获取待审批的请求
-                val result = linkRequestRepository.getPendingRequestsForCreator(currentUser.id)
-                Log.d("LinkRequestsVM", "getPendingRequestsForCreator result: success=${result.isSuccess}")
+                // 获取当前用户创建的所有老人资料
+                val profilesResult = seniorProfileRepository.getProfilesByCreator(currentUser.id)
+                val createdProfiles = profilesResult.getOrNull() ?: emptyList()
+                Log.d("LinkRequestsVM", "Found ${createdProfiles.size} created profiles")
                 
-                result.fold(
-                    onSuccess = { linkRequests ->
-                        Log.d("LinkRequestsVM", "Found ${linkRequests.size} pending requests")
-                        val displayRequests = mutableListOf<LinkRequestDisplay>()
-                        
-                        // 为每个请求获取相关的 Senior 和 User 信息
-                        linkRequests.forEach { request ->
-                            Log.d("LinkRequestsVM", "Processing request: ${request.id}")
-                            
-                            // 获取 Senior 信息
-                            val seniorResult = seniorRepository.getSeniorById(request.seniorId)
-                            val senior = seniorResult.getOrNull()
-                            
-                            if (senior == null) {
-                                Log.e("LinkRequestsVM", "Senior not found: ${request.seniorId}")
-                                return@forEach
-                            }
+                val displayRequests = mutableListOf<LinkRequestDisplay>()
+                
+                // 对于每个老人资料，获取 pending 状态的关系请求
+                createdProfiles.forEach { profile ->
+                    val relationsResult = caregiverRelationRepository.getPendingRelationsBySenior(profile.id)
+                    relationsResult.getOrNull()
+                        ?.forEach { relation ->
+                            Log.d("LinkRequestsVM", "Processing pending relation: ${relation.id}")
                             
                             // 获取请求者信息
-                            val requesterResult = authRepository.getUserById(request.requesterId)
+                            val requesterResult = authRepository.getUserById(relation.caregiverId)
                             val requester = requesterResult.getOrNull()
-                            
-                            Log.d("LinkRequestsVM", "Requester info - name: '${requester?.name}', username: '${requester?.username}', email: '${requester?.email}'")
                             
                             val finalName = requester?.name?.takeIf { it.isNotEmpty() } 
                                 ?: requester?.username 
@@ -111,44 +101,34 @@ class LinkRequestsViewModel @Inject constructor(
                             
                             displayRequests.add(
                                 LinkRequestDisplay(
-                                    id = request.id,
-                                    seniorId = request.seniorId,
-                                    seniorName = senior.name,
-                                    requesterId = request.requesterId,
+                                    id = relation.id,
+                                    seniorId = profile.id,
+                                    seniorName = profile.name,
+                                    requesterId = relation.caregiverId,
                                     requesterName = finalName,
                                     requesterEmail = finalEmail,
-                                    relationship = request.relationship,
-                                    message = request.message.takeIf { it.isNotEmpty() } 
-                                        ?: "Would like to link to ${senior.name} as ${request.nickname}",
-                                    requestedDate = "Requested on ${dateFormat.format(Date(request.createdAt))}",
-                                    timeAgo = getTimeAgo(request.createdAt),
-                                    timestamp = request.createdAt
+                                    relationship = relation.relationship,
+                                    message = relation.message.takeIf { it.isNotEmpty() } 
+                                        ?: "Would like to link to ${profile.name} as ${relation.nickname}",
+                                    requestedDate = "Requested on ${dateFormat.format(Date(relation.createdAt))}",
+                                    timeAgo = getTimeAgo(relation.createdAt),
+                                    timestamp = relation.createdAt
                                 )
                             )
                         }
-                        
-                        Log.d("LinkRequestsVM", "Total display requests created: ${displayRequests.size}")
-                        
-                        // 按时间倒序排序
-                        val sortedRequests = displayRequests.sortedByDescending { it.timestamp }
-                        
-                        _uiState.update { 
-                            it.copy(
-                                pendingRequests = sortedRequests,
-                                isLoading = false
-                            )
-                        }
-                    },
-                    onFailure = { error ->
-                        Log.e("LinkRequestsVM", "Failed to load requests: ${error.message}", error)
-                        _uiState.update { 
-                            it.copy(
-                                isLoading = false,
-                                errorMessage = error.message ?: "Failed to load pending requests"
-                            )
-                        }
-                    }
-                )
+                }
+                
+                Log.d("LinkRequestsVM", "Total display requests created: ${displayRequests.size}")
+                
+                // 按时间倒序排序
+                val sortedRequests = displayRequests.sortedByDescending { it.timestamp }
+                
+                _uiState.update { 
+                    it.copy(
+                        pendingRequests = sortedRequests,
+                        isLoading = false
+                    )
+                }
             } catch (e: Exception) {
                 Log.e("LinkRequestsVM", "Exception loading requests: ${e.message}", e)
                 _uiState.update { 
@@ -166,89 +146,36 @@ class LinkRequestsViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true) }
             
             try {
-                // 1. 获取 LinkRequest 
-                val linkRequestResult = linkRequestRepository.getRequestById(request.id)
-                val linkRequest = linkRequestResult.getOrNull()
-                
-                if (linkRequest == null) {
+                val currentUser = authRepository.getCurrentUser()
+                if (currentUser == null) {
                     _uiState.update { 
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = "Request not found"
-                        )
+                        it.copy(isLoading = false, errorMessage = "User not logged in")
                     }
                     return@launch
                 }
                 
-                // 2. 获取老人数据
-                val seniorResult = seniorRepository.getSeniorById(request.seniorId)
-                val senior = seniorResult.getOrNull()
-                
-                if (senior == null) {
-                    _uiState.update { 
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = "Senior account not found"
-                        )
-                    }
-                    return@launch
-                }
-                
-                // 3. 添加到 caregiverIds 并创建 caregiverRelationship
-                val updatedCaregiverIds = if (!senior.caregiverIds.contains(request.requesterId)) {
-                    senior.caregiverIds + request.requesterId
-                } else {
-                    senior.caregiverIds
-                }
-                
-                val updatedRelationships = senior.caregiverRelationships.toMutableMap()
-                updatedRelationships[request.requesterId] = com.alvin.pulselink.domain.model.CaregiverRelationship(
-                    relationship = linkRequest.relationship,
-                    nickname = linkRequest.nickname,
-                    linkedAt = linkRequest.createdAt,
-                    status = "active",
-                    message = linkRequest.message
-                )
-                
-                // 4. 更新 Senior
-                val updatedSenior = senior.copy(
-                    caregiverIds = updatedCaregiverIds,
-                    caregiverRelationships = updatedRelationships
-                )
-                
-                val updateResult = seniorRepository.updateSenior(updatedSenior)
-                
-                if (updateResult.isSuccess) {
-                    // 5. 更新 LinkRequest 状态为 approved
-                    linkRequestRepository.updateRequestStatus(request.id, "approved")
-                        .onSuccess {
-                            Log.d("LinkRequestsVM", "Approved request: ${request.id}")
-                            // 从待处理列表中移除
-                            _uiState.update { state ->
-                                state.copy(
-                                    pendingRequests = state.pendingRequests.filter { it.id != request.id },
-                                    isLoading = false,
-                                    successMessage = "Link request approved successfully!"
-                                )
-                            }
+                // 更新关系状态为 approved
+                caregiverRelationRepository.approveRelation(request.id, currentUser.id)
+                    .onSuccess {
+                        Log.d("LinkRequestsVM", "Approved request: ${request.id}")
+                        // 从待处理列表中移除
+                        _uiState.update { state ->
+                            state.copy(
+                                pendingRequests = state.pendingRequests.filter { it.id != request.id },
+                                isLoading = false,
+                                successMessage = "Link request approved successfully!"
+                            )
                         }
-                        .onFailure { error ->
-                            Log.e("LinkRequestsVM", "Failed to update request status: ${error.message}")
-                            _uiState.update { 
-                                it.copy(
-                                    isLoading = false,
-                                    errorMessage = error.message ?: "Failed to update request status"
-                                )
-                            }
-                        }
-                } else {
-                    _uiState.update { 
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = updateResult.exceptionOrNull()?.message ?: "Failed to approve request"
-                        )
                     }
-                }
+                    .onFailure { error ->
+                        Log.e("LinkRequestsVM", "Failed to approve request: ${error.message}")
+                        _uiState.update { 
+                            it.copy(
+                                isLoading = false,
+                                errorMessage = error.message ?: "Failed to approve request"
+                            )
+                        }
+                    }
             } catch (e: Exception) {
                 Log.e("LinkRequestsVM", "Exception approving request: ${e.message}", e)
                 _uiState.update { 
@@ -266,8 +193,16 @@ class LinkRequestsViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true) }
             
             try {
-                // 更新 LinkRequest 状态为 rejected
-                linkRequestRepository.updateRequestStatus(request.id, "rejected")
+                val currentUser = authRepository.getCurrentUser()
+                if (currentUser == null) {
+                    _uiState.update { 
+                        it.copy(isLoading = false, errorMessage = "User not logged in")
+                    }
+                    return@launch
+                }
+                
+                // 更新关系状态为 rejected
+                caregiverRelationRepository.rejectRelation(request.id, currentUser.id)
                     .onSuccess {
                         Log.d("LinkRequestsVM", "Rejected request: ${request.id}")
                         // 从待处理列表中移除

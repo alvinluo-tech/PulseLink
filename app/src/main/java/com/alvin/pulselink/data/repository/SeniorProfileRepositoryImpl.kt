@@ -159,16 +159,9 @@ class SeniorProfileRepositoryImpl @Inject constructor(
     
     override suspend fun deleteProfile(profileId: String): Result<Unit> {
         return try {
-            // 调用 Cloud Function 删除相关数据
-            functions.getHttpsCallable("deleteSeniorProfile")
-                .call(hashMapOf("profileId" to profileId))
-                .await()
-            
+            // 只删除 Firestore 文档，Cloud Function 由 UseCase 层调用
             // 删除档案
             profilesCollection.document(profileId).delete().await()
-            
-            // 删除密码
-            passwordsCollection.document(profileId).delete().await()
             
             Log.d(TAG, "Deleted profile: $profileId")
             Result.success(Unit)

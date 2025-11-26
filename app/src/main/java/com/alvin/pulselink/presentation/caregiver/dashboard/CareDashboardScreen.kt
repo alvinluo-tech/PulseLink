@@ -29,22 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
-data class LovedOne(
-    val id: String,
-    val name: String, // 显示名称（nickname 或默认称呼）
-    val actualName: String = name, // 真实姓名
-    val relationship: String,
-    val emoji: String,
-    val status: HealthStatus,
-    val statusMessage: String,
-    val statusColor: Color,
-    val borderColor: Color
-)
-
-enum class HealthStatus {
-    GOOD, ATTENTION, URGENT
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CareDashboardScreen(
@@ -328,19 +312,14 @@ private fun LovedOneCard(
             Spacer(modifier = Modifier.width(16.dp))
             
             Column(modifier = Modifier.weight(1f)) {
-                // Display name: 称呼（真实名字）
+                // Display name: nickname(老人名)
                 Text(
-                    text = lovedOne.name,
+                    text = "${lovedOne.nickname}(${lovedOne.name})",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF2C3E50)
                 )
-                Text(
-                    text = lovedOne.relationship,
-                    fontSize = 14.sp,
-                    color = Color(0xFF6B7280)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier

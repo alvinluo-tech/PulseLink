@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.alvin.pulselink.domain.model.Senior
+import com.alvin.pulselink.domain.usecase.profile.ManagedSeniorInfo
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -36,7 +36,7 @@ fun ManageSeniorsScreen(
     onCreateSenior: () -> Unit,
     onEditSenior: (String) -> Unit
 ) {
-    val manageSeniorsState by viewModel.manageSeniorsState.collectAsStateWithLifecycle()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -65,7 +65,6 @@ fun ManageSeniorsScreen(
                 )
             )
         },
-        // snackbarHost 已移除
     ) { paddingValues ->
         Box(
             modifier = Modifier
@@ -73,7 +72,7 @@ fun ManageSeniorsScreen(
                 .background(Color(0xFFF5F7FA))
                 .padding(paddingValues)
         ) {
-            if (manageSeniorsState.isLoading) {
+            if (uiState.isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
                     color = Color(0xFF8B5CF6)
@@ -81,13 +80,13 @@ fun ManageSeniorsScreen(
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
                     // 显示所有创建与链接的老人（合并列表）
-                    val list = remember(manageSeniorsState.createdSeniors, manageSeniorsState.linkedSeniors) {
-                        manageSeniorsState.createdSeniors + manageSeniorsState.linkedSeniors
+                    val list = remember(uiState.createdSeniors, uiState.linkedSeniors) {
+                        uiState.createdSeniors + uiState.linkedSeniors
                     }
 
                     // 统计信息
-                    val createdCount = manageSeniorsState.createdSeniors.size
-                    val linkedCount = manageSeniorsState.linkedSeniors.size
+                    val createdCount = uiState.createdSeniors.size
+                    val linkedCount = uiState.linkedSeniors.size
                     val totalCount = createdCount + linkedCount
 
                     Row(
@@ -110,15 +109,13 @@ fun ManageSeniorsScreen(
                                 .padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(list) { senior ->
-                                val pendingRequest = manageSeniorsState.pendingRequestsMap[senior.id]
+                            items(list) { seniorInfo ->
                                 SeniorCard(
-                                    senior = senior,
-                                    currentUserId = manageSeniorsState.currentUserId,
-                                    pendingRequest = pendingRequest,
+                                    seniorInfo = seniorInfo,
+                                    currentUserId = uiState.currentUserId,
                                     onEdit = { onEditSenior(it) },
                                     onUnlink = { viewModel.unlinkSenior(it) },
-                                    onDelete = { viewModel.deleteSenior(it) }
+                                    onDelete = { viewModel.showDeleteConfirmation(seniorInfo) }
                                 )
                             }
                         }
@@ -126,6 +123,15 @@ fun ManageSeniorsScreen(
                 }
             }
         }
+    }
+    
+    // 删除确认对话框
+    uiState.seniorToDelete?.let { senior ->
+        DeleteConfirmDialog(
+            seniorName = senior.profile.name,
+            onConfirm = { viewModel.executeDeleteSenior(senior.profile.id) },
+            onDismiss = { viewModel.cancelDelete() }
+        )
     }
 }
 
@@ -168,19 +174,19 @@ private fun EmptyState() {
 
 @Composable
 private fun SeniorCard(
-    senior: Senior,
+    seniorInfo: ManagedSeniorInfo,
     currentUserId: String,
-    pendingRequest: com.alvin.pulselink.domain.model.LinkRequest?,
     onEdit: (String) -> Unit,
     onUnlink: (String) -> Unit,
     onDelete: (String) -> Unit
 ) {
-    val isCreator = senior.creatorId == currentUserId
+    val profile = seniorInfo.profile
+    val isCreator = profile.creatorId == currentUserId
     // 检查是否是pending状态
-    val isPending = pendingRequest != null && pendingRequest.status == "pending"
+    val isPending = seniorInfo.relation.status == "pending"
     
-    // Get avatar emoji based on age and gender
-    val avatarEmoji = com.alvin.pulselink.util.AvatarHelper.getAvatarEmoji(senior.avatarType)
+    // Get avatar emoji based on avatarType
+    val avatarEmoji = com.alvin.pulselink.util.AvatarHelper.getAvatarEmoji(profile.avatarType)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -219,7 +225,7 @@ private fun SeniorCard(
                         Row(verticalAlignment = Alignment.CenterVertically) {
 
                             Text(
-                                text = senior.name,
+                                text = profile.name,
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF2C3E50)
@@ -269,53 +275,20 @@ private fun SeniorCard(
                 InfoChip(
                     icon = Icons.Default.Person,
                     label = "Age",
-                    value = "${senior.age} years"
+                    value = "${profile.age} years"
                 )
                 InfoChip(
-                    icon = if (senior.gender == "Male") Icons.Default.Male else Icons.Default.Female,
+                    icon = if (profile.gender == "Male") Icons.Default.Male else Icons.Default.Female,
                     label = "Gender",
-                    value = senior.gender
+                    value = profile.gender
                 )
-            }
-
-            // Health Snapshot
-            senior.healthHistory.bloodPressure?.let { bp ->
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = Color(0xFFE5E7EB))
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = "Health Snapshot",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF6B7280)
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    HealthMetricCard(
-                        label = "Blood Pressure",
-                        value = "${bp.systolic}/${bp.diastolic}",
-                        unit = "mmHg",
-                        modifier = Modifier.weight(1f)
-                    )
-                    senior.healthHistory.heartRate?.let { hr ->
-                        HealthMetricCard(
-                            label = "Heart Rate",
-                            value = hr.toString(),
-                            unit = "bpm",
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
             Text(
-                text = "Created: ${dateFormat.format(Date(senior.createdAt))}",
+                text = "Created: ${dateFormat.format(Date(profile.createdAt))}",
                 fontSize = 12.sp,
                 color = Color(0xFF9CA3AF)
             )
@@ -357,7 +330,7 @@ private fun SeniorCard(
             ) {
                 if (isCreator) {
                     Button(
-                        onClick = { onEdit(senior.id) },
+                        onClick = { onEdit(profile.id) },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
                     ) {
                         Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -368,7 +341,7 @@ private fun SeniorCard(
                     Spacer(modifier = Modifier.width(8.dp))
 
                     OutlinedButton(
-                        onClick = { onDelete(senior.id) },
+                        onClick = { onDelete(profile.id) },
                         border = BorderStroke(1.dp, Color(0xFFEF4444)),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444))
                     ) {
@@ -386,7 +359,7 @@ private fun SeniorCard(
                     )
                 } else {
                     OutlinedButton(
-                        onClick = { onUnlink(senior.id) },
+                        onClick = { onUnlink(profile.id) },
                         border = BorderStroke(1.dp, Color(0xFF2563EB)),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2563EB))
                     ) {
@@ -425,41 +398,88 @@ private fun InfoChip(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = Color(0xFF8B5CF6),
-            modifier = Modifier.size(20.dp)
+            tint = Color(0xFF6366F1),
+            modifier = Modifier.size(16.dp)
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(6.dp))
         Column {
-            Text(text = label, fontSize = 12.sp, color = Color(0xFF9CA3AF))
-            Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color(0xFF2C3E50))
+            Text(text = label, fontSize = 10.sp, color = Color(0xFF9CA3AF))
+            Text(text = value, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFF374151))
         }
     }
 }
 
+/**
+ * 删除确认对话框
+ */
 @Composable
-private fun HealthMetricCard(
-    label: String,
-    value: String,
-    unit: String,
-    modifier: Modifier = Modifier
+private fun DeleteConfirmDialog(
+    seniorName: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
 ) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = Color(0xFFF9FAFB),
-        border = BorderStroke(1.dp, Color(0xFFE5E7EB))
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(text = label, fontSize = 11.sp, color = Color(0xFF6B7280))
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(text = value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2C3E50))
-                Spacer(modifier = Modifier.width(2.dp))
-                Text(text = unit, fontSize = 11.sp, color = Color(0xFF9CA3AF))
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = Color(0xFFEF4444),
+                modifier = Modifier.size(48.dp)
+            )
+        },
+        title = {
+            Text(
+                text = "Delete Senior Account?",
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Are you sure you want to delete the account for \"$seniorName\"?",
+                    fontSize = 16.sp,
+                    color = Color(0xFF374151)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFFEF2F2),
+                    border = BorderStroke(1.dp, Color(0xFFFECACA))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "⚠️ This action cannot be undone",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFDC2626)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "All data including health records and relationships will be permanently deleted.",
+                            fontSize = 13.sp,
+                            color = Color(0xFF991B1B)
+                        )
+                    }
+                }
             }
-        }
-    }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFEF4444)
+                )
+            ) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("Cancel", color = Color(0xFF6B7280))
+            }
+        },
+        containerColor = Color.White
+    )
 }

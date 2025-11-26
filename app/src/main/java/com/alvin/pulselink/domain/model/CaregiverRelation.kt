@@ -6,13 +6,13 @@ package com.alvin.pulselink.domain.model
  * 方案C重构：独立集合管理关系
  * Collection: caregiver_relations/{relationId}
  * 
- * relationId 格式: "${caregiverId}_${seniorProfileId}"
+ * relationId 格式: "${caregiverId}_${seniorId}"
  * 这样可以确保每对护理者-老人关系唯一，且支持高效查询
  */
 data class CaregiverRelation(
-    val id: String = "",                    // 关系ID: "${caregiverId}_${seniorProfileId}"
+    val id: String = "",                    // 关系ID: "${caregiverId}_${seniorId}"
     val caregiverId: String = "",           // 护理者 UID (indexed)
-    val seniorProfileId: String = "",       // 老人档案 ID (indexed)
+    val seniorId: String = "",              // 老人档案 ID (indexed)
     
     // 关系信息
     val relationship: String = "",          // 护理者是老人的什么 (例如: "Son", "Daughter")
@@ -32,7 +32,10 @@ data class CaregiverRelation(
     val canEditHealthData: Boolean = false,
     val canViewReminders: Boolean = true,
     val canEditReminders: Boolean = true,
-    val canApproveRequests: Boolean = false
+    val canApproveRequests: Boolean = false,
+    
+    // 虚拟账户密码（仅 PRIMARY_CAREGIVER 存储）
+    val virtualAccountPassword: String? = null
 ) {
     companion object {
         const val STATUS_PENDING = "pending"
@@ -42,8 +45,8 @@ data class CaregiverRelation(
         /**
          * 生成关系ID
          */
-        fun generateId(caregiverId: String, seniorProfileId: String): String {
-            return "${caregiverId}_${seniorProfileId}"
+        fun generateId(caregiverId: String, seniorId: String): String {
+            return "${caregiverId}_${seniorId}"
         }
     }
     
@@ -64,16 +67,4 @@ data class CaregiverRelation(
      */
     val isRejected: Boolean
         get() = status == STATUS_REJECTED
-    
-    /**
-     * 转换为权限对象（兼容旧代码）
-     */
-    fun toPermissions(): CaregiverPermissions {
-        return CaregiverPermissions(
-            canViewHealthData = canViewHealthData,
-            canViewReminders = canViewReminders,
-            canEditReminders = canEditReminders,
-            canApproveLinkRequests = canApproveRequests
-        )
-    }
 }

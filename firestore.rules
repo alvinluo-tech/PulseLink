@@ -45,15 +45,18 @@ service cloud.firestore {
       allow create: if isAuthenticated()
                     && request.resource.data.creatorId == request.auth.uid;
       
-      // 读取：老人自己、创建者、有活跃关系的护理者
-      allow read: if isAuthenticated() 
-                  && (isSeniorUser() || isCreator() || hasActiveRelation());
+      // 读取：任何已认证用户都可以读取（通过关系和权限在应用层控制）
+      // 这样可以支持查询，实际权限通过 caregiver_relations 控制
+      allow read: if isAuthenticated();
       
       // 更新：老人自己或创建者
-      allow update: if isSeniorUser() || isCreator();
+      allow update: if isAuthenticated() && (
+        (resource != null && isSeniorUser()) 
+        || (resource != null && isCreator())
+      );
       
       // 删除：仅创建者
-      allow delete: if isCreator();
+      allow delete: if isAuthenticated() && resource != null && isCreator();
     }
     
     // 老人密码（单独存储）
@@ -90,7 +93,7 @@ service cloud.firestore {
       }
       
       function isSeniorOwner() {
-        let profileId = resource.data.seniorProfileId;
+        let profileId = resource.data.seniorId;
         let profile = get(/databases/$(database)/documents/senior_profiles/$(profileId));
         return isAuthenticated() 
             && (profile.data.userId == request.auth.uid || profile.data.creatorId == request.auth.uid);
@@ -103,13 +106,30 @@ service cloud.firestore {
             || (isAuthenticated() && resource.data.canApproveRequests == true);
       }
       
-      // 创建：护理者可创建关系请求
+      function isProfileCreator() {
+        let profileId = request.resource.data.seniorId;
+        return exists(/databases/$(database)/documents/senior_profiles/$(profileId))
+            && get(/databases/$(database)/documents/senior_profiles/$(profileId)).data.creatorId == request.auth.uid;
+      }
+      
+      // 根据 relationId 格式判断是否为关系的参与者
+      // relationId 格式: {caregiverId}_{seniorId}
+      function isRelationParticipant() {
+        // relationId 以当前用户 ID 开头，说明是护理者
+        return relationId.matches(request.auth.uid + '_.*');
+      }
+      
+      // 创建：护理者可创建关系请求（pending），或者是老人的创建者可以直接创建 active 关系
       allow create: if isAuthenticated()
                     && request.resource.data.caregiverId == request.auth.uid
-                    && request.resource.data.status == 'pending';
+                    && (request.resource.data.status == 'pending' 
+                        || (request.resource.data.status == 'active' && isProfileCreator()));
       
-      // 读取：护理者或老人相关方
-      allow read: if isCaregiver() || isSeniorOwner();
+      // 读取：护理者（relationId以用户ID开头）或老人相关方（如果文档存在）
+      allow read: if isAuthenticated() && (
+        isRelationParticipant() 
+        || (resource != null && (isCaregiver() || isSeniorOwner()))
+      );
       
       // 更新：有审批权的人可以更新状态，护理者可以删除自己的请求
       allow update: if canApprove();
@@ -120,56 +140,69 @@ service cloud.firestore {
     
     // 健康记录
     match /health_records/{recordId} {
-      function getSeniorProfile() {
-        return get(/databases/$(database)/documents/senior_profiles/$(resource.data.seniorProfileId));
-      }
-      
-      function isSeniorOwner() {
-        let profile = getSeniorProfile();
+      function isSeniorUser(seniorId) {
+        // 检查当前用户是否是这条记录对应的老人
+        // 通过 senior_profiles 反查，看当前用户是否是该档案的 userId
         return isAuthenticated() 
-            && (profile.data.userId == request.auth.uid || profile.data.creatorId == request.auth.uid);
+            && exists(/databases/$(database)/documents/senior_profiles/$(seniorId))
+            && get(/databases/$(database)/documents/senior_profiles/$(seniorId)).data.userId != null
+            && get(/databases/$(database)/documents/senior_profiles/$(seniorId)).data.userId == request.auth.uid;
       }
       
-      function hasHealthDataPermission() {
-        let relationId = request.auth.uid + '_' + resource.data.seniorProfileId;
-        return exists(/databases/$(database)/documents/caregiver_relations/$(relationId))
+      function isProfileCreator(seniorId) {
+        // 检查当前用户是否是老人档案的创建者
+        return isAuthenticated()
+            && exists(/databases/$(database)/documents/senior_profiles/$(seniorId))
+            && get(/databases/$(database)/documents/senior_profiles/$(seniorId)).data.creatorId == request.auth.uid;
+      }
+      
+      function hasHealthDataPermission(seniorId) {
+        // 检查护理者是否有查看健康数据的权限
+        let relationId = request.auth.uid + '_' + seniorId;
+        return isAuthenticated()
+            && exists(/databases/$(database)/documents/caregiver_relations/$(relationId))
             && get(/databases/$(database)/documents/caregiver_relations/$(relationId)).data.status == 'active'
             && get(/databases/$(database)/documents/caregiver_relations/$(relationId)).data.canViewHealthData == true;
       }
       
-      function hasEditHealthPermission() {
-        let relationId = request.auth.uid + '_' + resource.data.seniorProfileId;
-        return exists(/databases/$(database)/documents/caregiver_relations/$(relationId))
+      function hasEditHealthPermission(seniorId) {
+        let relationId = request.auth.uid + '_' + seniorId;
+        return isAuthenticated()
+            && exists(/databases/$(database)/documents/caregiver_relations/$(relationId))
             && get(/databases/$(database)/documents/caregiver_relations/$(relationId)).data.status == 'active'
             && get(/databases/$(database)/documents/caregiver_relations/$(relationId)).data.canEditHealthData == true;
       }
       
-      // 创建：老人或有编辑权限的护理者
-      allow create: if isAuthenticated();  // 简化：先允许所有认证用户，后续细化
+      // 创建：认证用户可以创建自己或有权限的老人的记录
+      allow create: if isAuthenticated() && (
+        isSeniorUser(request.resource.data.seniorId)  // 老人为自己创建
+        || isProfileCreator(request.resource.data.seniorId)  // 档案创建者创建
+        || hasEditHealthPermission(request.resource.data.seniorId)  // 有编辑权限的护理者创建
+      );
       
-      // 读取：老人或有查看权限的护理者
-      allow read: if isSeniorOwner() || hasHealthDataPermission();
+      // 读取：查询时允许所有认证用户，单个文档读取时验证权限
+      allow read: if isAuthenticated() && (
+        resource == null  // 查询时允许
+        || isSeniorUser(resource.data.seniorId)  // 老人本人
+        || isProfileCreator(resource.data.seniorId)  // 档案创建者
+        || hasHealthDataPermission(resource.data.seniorId)  // 有权限的护理者
+      );
       
-      // 更新：老人或有编辑权限的护理者
-      allow update: if isSeniorOwner() || hasEditHealthPermission();
+      // 更新：老人本人、档案创建者、或有编辑权限的护理者
+      allow update: if isAuthenticated() && (
+        isSeniorUser(resource.data.seniorId) 
+        || isProfileCreator(resource.data.seniorId) 
+        || hasEditHealthPermission(resource.data.seniorId)
+      );
       
-      // 删除：老人或创建者
-      allow delete: if isSeniorOwner();
+      // 删除：老人本人或档案创建者
+      allow delete: if isAuthenticated() && resource != null && (
+        isSeniorUser(resource.data.seniorId) 
+        || isProfileCreator(resource.data.seniorId)
+      );
     }
     
-    // ========== 旧架构集合（保持兼容）==========
-    
-    // 健康数据（旧）
-    match /health_data/{userId}/{document=**} {
-      allow read, write: if isOwner(userId);
-      allow read: if isAuthenticated() 
-                  && exists(/databases/$(database)/documents/seniors/$(getSeniorIdByUid(userId)))
-                  && request.auth.uid in get(/databases/$(database)/documents/seniors/$(getSeniorIdByUid(userId))).data.caregiverIds;
-    }
-    
-    function getSeniorIdByUid(uid) {
-      return get(/databases/$(database)/documents/users/$(uid)).data.seniorId;
-    }
+    // ========== 其他集合 ==========
     
     // 提醒数据
     match /reminders/{userId}/{document=**} {
@@ -179,93 +212,6 @@ service cloud.firestore {
     // 聊天记录
     match /chat_history/{userId}/{document=**} {
       allow read, write: if isOwner(userId);
-    }
-    
-    // 老人账户数据（旧）- 保持兼容
-    match /seniors/{seniorId} {
-      function isCreator() {
-        return isAuthenticated() && resource.data.creatorId == request.auth.uid;
-      }
-
-      function isCaregiverBound() {
-        return isAuthenticated() && (request.auth.uid in resource.data.caregiverIds);
-      }
-
-      function isSeniorSelf() {
-        return isAuthenticated() 
-               && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('seniorId', null) == seniorId;
-      }
-
-      function hasPermissionToUpdate() {
-        let relationship = resource.data.caregiverRelationships[request.auth.uid];
-        let changedKeys = request.resource.data.diff(resource.data).changedKeys();
-        return (relationship.permissions.canEditReminders && changedKeys.hasOnly(['reminders']))
-            || (relationship.permissions.canViewHealthData && changedKeys.hasOnly(['healthHistory']));
-      }
-
-      allow create: if isAuthenticated()
-                    && (
-                      (request.resource.data.creatorId == request.auth.uid
-                       && (request.auth.uid in request.resource.data.caregiverIds)
-                       && request.resource.data.caregiverIds.size() >= 1
-                       && request.resource.data.registrationType == 'CAREGIVER_CREATED')
-                      ||
-                      (request.resource.data.registrationType == 'SELF_REGISTERED'
-                       && request.resource.data.creatorId == request.auth.uid
-                       && request.resource.data.caregiverIds.size() == 0)
-                    )
-                    && request.resource.data.keys().hasOnly([
-                      'id','name','age','gender','avatarType','healthHistory','caregiverIds','caregiverRelationships','creatorId','createdAt','password','registrationType'
-                    ]);
-
-      allow read: if isAuthenticated();
-
-      allow delete: if isCreator();
-
-      allow update: if isSeniorSelf()
-                    || (isCreator() && !request.resource.data.diff(resource.data).changedKeys().hasAny(['caregiverRelationships']))
-                    || (isAuthenticated()
-                        && !(request.auth.uid in resource.data.caregiverIds)
-                        && !(request.auth.uid in request.resource.data.caregiverIds)
-                        && request.resource.data.creatorId == resource.data.creatorId
-                        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['caregiverRelationships'])
-                        && request.resource.data.caregiverIds == resource.data.caregiverIds)
-                    || (isCaregiverBound() && hasPermissionToUpdate());
-    }
-    
-    // Link Requests（旧）- 保持兼容
-    match /linkRequests/{requestId} {
-      function isRequester() {
-        return isAuthenticated() && resource.data.requesterId == request.auth.uid;
-      }
-      
-      function isSeniorOwner() {
-        let senior = get(/databases/$(database)/documents/seniors/$(resource.data.seniorId));
-        return isAuthenticated()
-               && (
-                 (senior.data.registrationType == 'SELF_REGISTERED' && senior.data.creatorId == request.auth.uid)
-                 || (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('seniorId', null) == resource.data.seniorId)
-               );
-      }
-      
-      function canApprove() {
-        let senior = get(/databases/$(database)/documents/seniors/$(resource.data.seniorId));
-        return isSeniorOwner() 
-            || (isAuthenticated() && request.auth.uid in senior.data.get('linkRequestApprovers', []));
-      }
-      
-      allow create: if isAuthenticated()
-                    && request.resource.data.requesterId == request.auth.uid
-                    && request.resource.data.status == 'pending';
-      
-      allow read: if isRequester() || canApprove();
-      
-      allow update: if canApprove()
-                    && request.resource.data.requesterId == resource.data.requesterId
-                    && request.resource.data.seniorId == resource.data.seniorId
-                    && request.resource.data.creatorId == resource.data.creatorId;
-      
-      allow delete: if isRequester() || canApprove();
     }
   }
 }

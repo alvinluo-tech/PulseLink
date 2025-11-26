@@ -7,17 +7,13 @@ import com.alvin.pulselink.data.repository.CaregiverRelationRepositoryImpl
 import com.alvin.pulselink.data.repository.ChatRepositoryImpl
 import com.alvin.pulselink.data.repository.HealthRecordRepositoryImpl
 import com.alvin.pulselink.data.repository.HealthRepositoryImpl
-import com.alvin.pulselink.data.repository.LinkRequestRepositoryImpl
 import com.alvin.pulselink.data.repository.SeniorProfileRepositoryImpl
-import com.alvin.pulselink.data.repository.SeniorRepositoryImpl
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.repository.CaregiverRelationRepository
 import com.alvin.pulselink.domain.repository.ChatRepository
 import com.alvin.pulselink.domain.repository.HealthRecordRepository
 import com.alvin.pulselink.domain.repository.HealthRepository
-import com.alvin.pulselink.domain.repository.LinkRequestRepository
 import com.alvin.pulselink.domain.repository.SeniorProfileRepository
-import com.alvin.pulselink.domain.repository.SeniorRepository
 import com.alvin.pulselink.domain.usecase.LoginUseCase
 import com.alvin.pulselink.domain.usecase.RegisterUseCase
 import com.alvin.pulselink.domain.usecase.ResetPasswordUseCase
@@ -97,29 +93,6 @@ object AppModule {
     }
     
     /**
-     * 提供 SeniorRepository 实现
-     */
-    @Provides
-    @Singleton
-    fun provideSeniorRepository(
-        firestore: FirebaseFirestore,
-        functions: FirebaseFunctions
-    ): SeniorRepository {
-        return SeniorRepositoryImpl(firestore, functions)
-    }
-    
-    /**
-     * 提供 LinkRequestRepository 实现
-     */
-    @Provides
-    @Singleton
-    fun provideLinkRequestRepository(
-        firestore: FirebaseFirestore
-    ): LinkRequestRepository {
-        return LinkRequestRepositoryImpl(firestore)
-    }
-    
-    /**
      * 提供 ChatRepository 实现
      */
     @Provides
@@ -131,7 +104,7 @@ object AppModule {
         return ChatRepositoryImpl(firestore, firebaseAuth)
     }
     
-    // ========== 方案C 新增 Repository ==========
+    // ========== Repository Providers ==========
     
     /**
      * 提供 SeniorProfileRepository 实现

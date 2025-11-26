@@ -1,505 +1,516 @@
 package com.alvin.pulselink.presentation.caregiver.senior
 
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.alvin.pulselink.domain.model.BloodPressureRecord
-import com.alvin.pulselink.domain.model.CaregiverPermissions
-import com.alvin.pulselink.domain.model.CaregiverRelationship
-import com.alvin.pulselink.domain.model.HealthHistory
-import com.alvin.pulselink.domain.model.Senior
+import com.alvin.pulselink.domain.model.CaregiverRelation
+import com.alvin.pulselink.domain.model.SeniorProfile
 import com.alvin.pulselink.domain.repository.AuthRepository
-import com.alvin.pulselink.domain.repository.LinkRequestRepository
-import com.alvin.pulselink.domain.repository.SeniorRepository
-import com.alvin.pulselink.domain.usecase.CreateSeniorUseCase
-import com.alvin.pulselink.util.QRCodeGenerator
+import com.alvin.pulselink.domain.usecase.profile.CreateSeniorProfileUseCase
+import com.alvin.pulselink.domain.usecase.profile.DeleteSeniorProfileUseCase
+import com.alvin.pulselink.domain.usecase.profile.GetCreatedProfilesUseCase
+import com.alvin.pulselink.domain.usecase.profile.GetManagedSeniorsUseCase
+import com.alvin.pulselink.domain.usecase.profile.ManagedSeniorInfo
+import com.alvin.pulselink.domain.usecase.profile.DeletionCheckResult
+import com.alvin.pulselink.domain.usecase.relation.ManageRelationUseCase
 import com.alvin.pulselink.util.AvatarHelper
+import com.alvin.pulselink.util.QRCodeGenerator
+import com.alvin.pulselink.util.RelationshipHelper
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 /**
  * 管理老人页面 ViewModel
+ * 
+ * 使用新的独立集合架构:
+ * - senior_profiles: 老人资料
+ * - caregiver_relations: 关系管理
+ * - health_records: 健康记录
  */
 @HiltViewModel
 class ManageSeniorsViewModel @Inject constructor(
-    private val seniorRepository: SeniorRepository,
-    private val linkRequestRepository: LinkRequestRepository,
-    private val createSeniorUseCase: CreateSeniorUseCase,
-    private val authRepository: AuthRepository
+    private val getManagedSeniorsUseCase: GetManagedSeniorsUseCase,
+    private val getCreatedProfilesUseCase: GetCreatedProfilesUseCase,
+    private val createSeniorProfileUseCase: CreateSeniorProfileUseCase,
+    private val deleteSeniorProfileUseCase: DeleteSeniorProfileUseCase,
+    private val manageRelationUseCase: ManageRelationUseCase,
+    private val authRepository: AuthRepository,
+    private val firestore: FirebaseFirestore
 ) : ViewModel() {
 
-    private val _manageSeniorsState = MutableStateFlow(ManageSeniorsUiState())
-    val manageSeniorsState: StateFlow<ManageSeniorsUiState> = _manageSeniorsState.asStateFlow()
+    companion object {
+        private const val TAG = "ManageSeniorsVM"
+    }
+
+    private val _uiState = MutableStateFlow(ManageSeniorsUiState())
+    val uiState: StateFlow<ManageSeniorsUiState> = _uiState.asStateFlow()
     
-    private val _createSeniorState = MutableStateFlow(CreateSeniorUiState())
-    val createSeniorState: StateFlow<CreateSeniorUiState> = _createSeniorState.asStateFlow()
+    private val _createFormState = MutableStateFlow(CreateSeniorFormState())
+    val createFormState: StateFlow<CreateSeniorFormState> = _createFormState.asStateFlow()
 
     init {
         loadSeniors()
     }
 
+    /**
+     * 加载所有管理的老人
+     */
     fun loadSeniors() {
         viewModelScope.launch {
-            _manageSeniorsState.update { it.copy(isLoading = true, errorMessage = null, successMessage = null) }
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
-            val caregiverId = authRepository.getCurrentUid() ?: ""
-            Log.d("ManageSeniorsVM", "Loading seniors for caregiver: $caregiverId")
+            val caregiverId = authRepository.getCurrentUid()
+            if (caregiverId.isNullOrBlank()) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = "未登录") }
+                return@launch
+            }
+
+            Log.d(TAG, "Loading seniors for caregiver: $caregiverId")
 
             try {
-                // 1. 获取在caregiverIds中的老人（已批准的active状态）
-                val activeSeniorsResult = seniorRepository.getSeniorsByCaregiver(caregiverId)
-                Log.d("ManageSeniorsVM", "Active seniors result: ${activeSeniorsResult.isSuccess}")
+                // 1. 获取管理的老人（已批准状态）
+                val managedResult = getManagedSeniorsUseCase(caregiverId)
                 
-                // 2. 获取自己创建的所有老人
-                val createdSeniorsResult = seniorRepository.getSeniorsByCreator(caregiverId)
-                Log.d("ManageSeniorsVM", "Created seniors result: ${createdSeniorsResult.isSuccess}")
+                // 2. 获取创建的老人
+                val createdResult = getCreatedProfilesUseCase(caregiverId)
                 
-                // 3. 获取用户发出的pending请求
-                val pendingRequestsResult = linkRequestRepository.getRequestsByRequester(caregiverId)
-                Log.d("ManageSeniorsVM", "Pending requests result: ${pendingRequestsResult.isSuccess}")
-                
-                if (activeSeniorsResult.isSuccess && createdSeniorsResult.isSuccess && pendingRequestsResult.isSuccess) {
-                    val activeSeniors = activeSeniorsResult.getOrNull() ?: emptyList()
-                    val createdSeniors = createdSeniorsResult.getOrNull() ?: emptyList()
-                    val pendingRequests = pendingRequestsResult.getOrNull() ?: emptyList()
-                    
-                    Log.d("ManageSeniorsVM", "Active count: ${activeSeniors.size}")
-                    Log.d("ManageSeniorsVM", "Created count: ${createdSeniors.size}")
-                    Log.d("ManageSeniorsVM", "Pending requests count: ${pendingRequests.size}")
-                    
-                    // 对于pending请求，需要获取对应的Senior信息
-                    val pendingSeniors = mutableListOf<Senior>()
-                    val pendingRequestsMap = mutableMapOf<String, com.alvin.pulselink.domain.model.LinkRequest>()
-                    pendingRequests.filter { it.status == "pending" }.forEach { request ->
-                        seniorRepository.getSeniorById(request.seniorId)
-                            .onSuccess { senior ->
-                                pendingSeniors.add(senior)
-                                pendingRequestsMap[senior.id] = request
-                            }
-                            .onFailure { error ->
-                                Log.e("ManageSeniorsVM", "Failed to load senior ${request.seniorId}: ${error.message}")
-                            }
-                    }
-                    
-                    // 合并所有列表，去重（使用ID）
-                    val allSeniors = (activeSeniors + createdSeniors + pendingSeniors).distinctBy { it.id }
-                    Log.d("ManageSeniorsVM", "Total unique seniors: ${allSeniors.size}")
-                    
-                    val created = allSeniors.filter { it.creatorId == caregiverId }
-                    val linkedOnly = allSeniors.filter { it.creatorId != caregiverId }
-                    
-                    Log.d("ManageSeniorsVM", "Final - Created: ${created.size}, Linked: ${linkedOnly.size}")
+                // 3. 获取待处理的关系请求
+                // TODO: 添加获取 pending 请求的逻辑
 
-                    _manageSeniorsState.update {
+                if (managedResult.isSuccess && createdResult.isSuccess) {
+                    val managedSeniors = managedResult.getOrNull() ?: emptyList()
+                    val createdProfiles = createdResult.getOrNull() ?: emptyList()
+                    
+                    Log.d(TAG, "Managed seniors: ${managedSeniors.size}")
+                    Log.d(TAG, "Created profiles: ${createdProfiles.size}")
+                    
+                    // 分类：创建的 vs 仅关联的
+                    val createdIds = createdProfiles.map { it.id }.toSet()
+                    val linkedOnly = managedSeniors.filter { it.profile.id !in createdIds }
+                    val created = managedSeniors.filter { it.profile.id in createdIds }
+                    
+                    _uiState.update {
                         it.copy(
                             createdSeniors = created,
                             linkedSeniors = linkedOnly,
-                            pendingRequestsMap = pendingRequestsMap,
                             isLoading = false,
                             currentUserId = caregiverId
                         )
                     }
                 } else {
-                    val error = activeSeniorsResult.exceptionOrNull() 
-                        ?: createdSeniorsResult.exceptionOrNull() 
-                        ?: pendingRequestsResult.exceptionOrNull()
-                    Log.e("ManageSeniorsVM", "Failed to load seniors: ${error?.message}", error)
-                    _manageSeniorsState.update {
+                    val error = managedResult.exceptionOrNull() ?: createdResult.exceptionOrNull()
+                    Log.e(TAG, "Failed to load seniors: ${error?.message}", error)
+                    _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = error?.message ?: "Failed to load seniors",
-                            currentUserId = caregiverId
+                            errorMessage = error?.message ?: "加载失败"
                         )
                     }
                 }
             } catch (e: Exception) {
-                Log.e("ManageSeniorsVM", "Exception loading seniors: ${e.message}", e)
-                _manageSeniorsState.update {
+                Log.e(TAG, "Exception loading seniors: ${e.message}", e)
+                _uiState.update {
                     it.copy(
                         isLoading = false,
-                        errorMessage = e.message ?: "Failed to load seniors",
-                        currentUserId = caregiverId
+                        errorMessage = e.message ?: "加载失败"
                     )
                 }
             }
         }
     }
 
-    // Create Senior Form Handlers
+    // ========== 创建表单处理 ==========
+    
     fun onNameChanged(name: String) {
-        _createSeniorState.update { it.copy(name = name, nameError = null) }
+        _createFormState.update { it.copy(name = name, nameError = null) }
     }
 
     fun onAgeChanged(age: String) {
-        _createSeniorState.update { it.copy(age = age, ageError = null) }
+        _createFormState.update { it.copy(age = age, ageError = null) }
     }
 
     fun onGenderChanged(gender: String) {
-        _createSeniorState.update { it.copy(gender = gender) }
+        _createFormState.update { it.copy(gender = gender) }
     }
     
-    fun onRelationshipChanged(relationship: String) {
-        _createSeniorState.update { it.copy(relationship = relationship, relationshipError = null) }
+    fun onRelationshipChanged(relationship: String, gender: String) {
+        // 自动设置默认 nickname
+        val defaultNickname = RelationshipHelper.getDefaultAddressTitle(relationship, gender)
+        _createFormState.update { it.copy(
+            relationship = relationship,
+            nickname = defaultNickname  // 自动填充默认值
+        ) }
     }
-
+    
     fun onNicknameChanged(nickname: String) {
-        _createSeniorState.update { it.copy(nickname = nickname) }
+        _createFormState.update { it.copy(nickname = nickname) }
     }
 
-    fun onSystolicBPChanged(value: String) {
-        _createSeniorState.update { it.copy(systolicBP = value, bpError = null) }
-    }
-
-    fun onDiastolicBPChanged(value: String) {
-        _createSeniorState.update { it.copy(diastolicBP = value, bpError = null) }
-    }
-
-    fun onHeartRateChanged(value: String) {
-        _createSeniorState.update { it.copy(heartRate = value) }
-    }
-
-    fun onBloodSugarChanged(value: String) {
-        _createSeniorState.update { it.copy(bloodSugar = value) }
-    }
-
-    fun onMedicalConditionsChanged(value: String) {
-        _createSeniorState.update { it.copy(medicalConditions = value) }
-    }
-
-    fun onMedicationsChanged(value: String) {
-        _createSeniorState.update { it.copy(medications = value) }
-    }
-
-    fun onAllergiesChanged(value: String) {
-        _createSeniorState.update { it.copy(allergies = value) }
-    }
-
+    /**
+     * 创建老人资料
+     */
     fun createSenior(onSuccess: () -> Unit) {
-        val state = _createSeniorState.value
+        val state = _createFormState.value
         
-        // Validate
+        // 验证
         var hasError = false
         
         if (state.name.isBlank()) {
-            _createSeniorState.update { it.copy(nameError = "Name is required") }
+            _createFormState.update { it.copy(nameError = "姓名不能为空") }
             hasError = true
         }
         
         val ageInt = state.age.toIntOrNull()
         if (ageInt == null || ageInt <= 0) {
-            _createSeniorState.update { it.copy(ageError = "Valid age is required") }
-            hasError = true
-        }
-        
-        if (state.relationship.isBlank()) {
-            _createSeniorState.update { it.copy(relationshipError = "Relationship is required") }
+            _createFormState.update { it.copy(ageError = "请输入有效年龄") }
             hasError = true
         }
         
         if (hasError) return
         
         viewModelScope.launch {
-            _createSeniorState.update { it.copy(isLoading = true, errorMessage = null) }
+            _createFormState.update { it.copy(isLoading = true, errorMessage = null) }
             
-            val caregiverId = authRepository.getCurrentUid() ?: ""
+            val caregiverId = authRepository.getCurrentUid()
+            if (caregiverId.isNullOrBlank()) {
+                _createFormState.update { it.copy(isLoading = false, errorMessage = "未登录") }
+                return@launch
+            }
             
             // 根据年龄和性别自动选择头像类型
             val avatarType = AvatarHelper.getAvatarType(ageInt!!, state.gender)
             
-            // Parse blood pressure
-            val bloodPressure = if (state.systolicBP.isNotBlank() && state.diastolicBP.isNotBlank()) {
-                val systolic = state.systolicBP.toIntOrNull()
-                val diastolic = state.diastolicBP.toIntOrNull()
-                
-                if (systolic != null && diastolic != null) {
-                    BloodPressureRecord(systolic = systolic, diastolic = diastolic)
-                } else null
-            } else null
+            // 确保 nickname 有值，如果为空则使用默认值
+            val finalNickname = state.nickname.ifBlank {
+                RelationshipHelper.getDefaultAddressTitle(state.relationship, state.gender)
+            }
             
-            // Parse lists (comma-separated)
-            val medicalConditions = state.medicalConditions
-                .split(",")
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-            
-            val medications = state.medications
-                .split(",")
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-            
-            val allergies = state.allergies
-                .split(",")
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-            
-            val senior = Senior(
+            createSeniorProfileUseCase(
                 name = state.name,
                 age = ageInt,
                 gender = state.gender,
                 avatarType = avatarType,
-                caregiverIds = listOf(caregiverId), // ⭐ 创建即绑定：创建者立即加入
-                caregiverRelationships = mapOf(
-                    caregiverId to CaregiverRelationship(
-                        relationship = state.relationship, // "儿子"、"女儿" 等
-                        nickname = state.relationship,
-                        linkedAt = System.currentTimeMillis(),
-                        status = "active", // 创建者默认激活
-                        approvedBy = caregiverId, // 创建者自批准
-                        permissions = CaregiverPermissions(
-                            canViewHealthData = true,
-                            canViewReminders = true,
-                            canEditReminders = true,
-                            canApproveLinkRequests = true // ⭐ 创建者拥有审批权限
-                        )
-                    )
-                ),
-                creatorId = caregiverId, // ⭐ 记录创建者
-                registrationType = "CAREGIVER_CREATED", // ⭐ 明确设置注册类型
-                healthHistory = HealthHistory(
-                    bloodPressure = bloodPressure,
-                    heartRate = state.heartRate.toIntOrNull(),
-                    bloodSugar = state.bloodSugar.toDoubleOrNull(),
-                    medicalConditions = medicalConditions,
-                    medications = medications,
-                    allergies = allergies
-                )
-            )
-            
-            createSeniorUseCase(senior)
-                .onSuccess { result ->
-                    // 生成二维码图片
-                    val qrBitmap = QRCodeGenerator.generateQRCode(result.qrCodeData)
-                    
-                    _createSeniorState.update { it.copy(
+                creatorId = caregiverId,
+                customPassword = null,
+                relationship = state.relationship,
+                nickname = finalNickname  // 确保使用有值的 nickname
+            ).onSuccess { result ->
+                // 生成二维码
+                val qrBitmap = QRCodeGenerator.generateQRCode(result.qrCodeData)
+                
+                _createFormState.update {
+                    it.copy(
                         isLoading = false,
                         isSuccess = true,
-                        createdAccountEmail = result.email,
-                        createdAccountPassword = result.password,
+                        createdEmail = result.email,
+                        createdPassword = result.password,
                         qrCodeData = result.qrCodeData,
-                        qrCodeBitmap = qrBitmap
-                    ) }
-                    
-                    // Reload seniors list
-                    loadSeniors()
-                    
-                    // 创建成功提示消息（包含账户信息）
-                    _manageSeniorsState.update { 
-                        it.copy(
-                            successMessage = "老人账户创建成功！\n邮箱: ${result.email}\n密码: ${result.password}"
-                        ) 
-                    }
-
-                    // 不自动重置表单，以便显示二维码
-                    // 由 UI 在用户确认后手动调用 resetCreateForm()
-                    
-                    onSuccess()
+                        qrCodeBitmap = qrBitmap,
+                        errorMessage = null  // 清除错误消息
+                    )
                 }
-                .onFailure { error ->
-                    _createSeniorState.update { it.copy(
+                
+                // 刷新列表
+                loadSeniors()
+                
+                // 提示消息
+                _uiState.update { 
+                    it.copy(
+                        successMessage = "老人账户创建成功！\n邮箱: ${result.email}\n密码: ${result.password}",
+                        errorMessage = null  // 清除错误消息
+                    )
+                }
+                
+                onSuccess()
+            }.onFailure { error ->
+                _createFormState.update {
+                    it.copy(
                         isLoading = false,
-                        errorMessage = error.message ?: "Failed to create senior"
+                        errorMessage = error.message ?: "创建失败"
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * 检查是否可以删除老人（第一步）
+     */
+    suspend fun checkCanDeleteSenior(seniorProfileId: String): Result<DeletionCheckInfo> {
+        return try {
+            val requesterId = authRepository.getCurrentUid()
+                ?: return Result.failure(Exception("未登录"))
+            
+            val checkResult = deleteSeniorProfileUseCase
+                .checkDeletionAllowed(seniorProfileId, requesterId)
+                .getOrThrow()
+            
+            Result.success(
+                DeletionCheckInfo(
+                    canDelete = checkResult.canDelete,
+                    hasOtherCaregivers = checkResult.hasOtherCaregivers,
+                    otherCaregiversText = checkResult.otherCaregiversInfo.joinToString("、"),
+                    seniorName = checkResult.seniorName,
+                    totalRelations = checkResult.totalActiveRelations
+                )
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to check deletion", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * 执行删除老人（用户确认后）
+     */
+    fun executeDeleteSenior(seniorProfileId: String) {
+        // 立即关闭对话框
+        _uiState.update { it.copy(
+            showDeleteConfirmDialog = false,
+            seniorToDelete = null
+        ) }
+        
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            
+            val requesterId = authRepository.getCurrentUid()
+            if (requesterId.isNullOrBlank()) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = "未登录") }
+                return@launch
+            }
+            
+            deleteSeniorProfileUseCase(seniorProfileId, requesterId)
+                .onSuccess {
+                    _uiState.update { it.copy(
+                        successMessage = "已删除老人账户",
+                        isLoading = false
                     ) }
+                    loadSeniors()
+                }
+                .onFailure { e ->
+                    // 解析错误消息，提供友好提示
+                    val errorMsg = when {
+                        e.message?.contains("无法删除") == true && e.message?.contains("其他护理者") == true -> 
+                            e.message // Cloud Function 返回的详细消息
+                        e.message?.contains("permission-denied") == true || e.message?.contains("只有创建者") == true ->
+                            "只有创建者才能删除账号"
+                        e.message?.contains("not-found") == true ->
+                            "老人资料不存在"
+                        else -> e.message ?: "删除失败"
+                    }
+                    _uiState.update { it.copy(
+                        errorMessage = errorMsg,
+                        isLoading = false
+                    ) }
+                }
+        }
+    }
+    
+    /**
+     * 删除老人资料（旧方法，保留兼容）
+     */
+    fun deleteSenior(seniorProfileId: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            
+            val requesterId = authRepository.getCurrentUid()
+            if (requesterId.isNullOrBlank()) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = "未登录") }
+                return@launch
+            }
+            
+            deleteSeniorProfileUseCase(seniorProfileId, requesterId)
+                .onSuccess {
+                    _uiState.update { it.copy(successMessage = "已删除老人账户", isLoading = false) }
+                    loadSeniors()
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(errorMessage = e.message ?: "删除失败", isLoading = false) }
+                }
+        }
+    }
+
+    /**
+     * 解除关系
+     */
+    fun unlinkSenior(seniorProfileId: String) {
+        viewModelScope.launch {
+            val caregiverId = authRepository.getCurrentUid() ?: return@launch
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            
+            val relationId = CaregiverRelation.generateId(caregiverId, seniorProfileId)
+            
+            manageRelationUseCase.removeRelation(relationId, caregiverId)
+                .onSuccess {
+                    _uiState.update { it.copy(successMessage = "已解除绑定", isLoading = false) }
+                    loadSeniors()
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(errorMessage = e.message ?: "解除绑定失败", isLoading = false) }
                 }
         }
     }
 
     fun resetCreateForm() {
-        _createSeniorState.value = CreateSeniorUiState()
+        _createFormState.value = CreateSeniorFormState()
+    }
+    
+    /**
+     * 获取老人的登录凭据用于显示二维码
+     * 
+     * 权限规则：只有账号创建者才能查看登录密码
+     * 其他护理者无权查看密码，应该使用绑定二维码邀请功能
+     */
+    suspend fun getSeniorCredentials(seniorProfileId: String): Result<Pair<String, String>> {
+        return try {
+            val currentUserId = authRepository.getCurrentUid() 
+                ?: return Result.failure(Exception("未登录"))
+            
+            // 1. 获取老人档案，检查是否为创建者
+            val profileDoc = firestore.collection("senior_profiles")
+                .document(seniorProfileId)
+                .get()
+                .await()
+            
+            if (!profileDoc.exists()) {
+                return Result.failure(Exception("未找到老人档案"))
+            }
+            
+            val creatorId = profileDoc.getString("creatorId") ?: ""
+            val seniorName = profileDoc.getString("name") ?: "该老人"
+            
+            // 2. 检查当前用户是否为创建者
+            if (currentUserId != creatorId) {
+                return Result.failure(
+                    Exception("您不是${seniorName}账号的创建者，无法查看登录凭证。\n请联系创建者获取登录信息。")
+                )
+            }
+            
+            // 3. 作为创建者，从自己的关系中获取密码
+            val relationId = CaregiverRelation.generateId(currentUserId, seniorProfileId)
+            val relationDoc = firestore.collection("caregiver_relations")
+                .document(relationId)
+                .get()
+                .await()
+            
+            if (!relationDoc.exists()) {
+                return Result.failure(Exception("未找到关系记录"))
+            }
+            
+            val password = relationDoc.getString("virtualAccountPassword")
+            
+            if (password.isNullOrBlank()) {
+                return Result.failure(Exception("密码数据缺失，请尝试重新创建账号"))
+            }
+            
+            Result.success(Pair(seniorProfileId, password))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get senior credentials", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * 检查当前用户是否为老人账号的创建者
+     */
+    suspend fun isCreatorOf(seniorProfileId: String): Boolean {
+        return try {
+            val currentUserId = authRepository.getCurrentUid() ?: return false
+            
+            val profileDoc = firestore.collection("senior_profiles")
+                .document(seniorProfileId)
+                .get()
+                .await()
+            
+            val creatorId = profileDoc.getString("creatorId") ?: ""
+            currentUserId == creatorId
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to check creator", e)
+            false
+        }
     }
 
     fun clearSuccessMessage() {
-        _manageSeniorsState.update { it.copy(successMessage = null) }
+        _uiState.update { it.copy(successMessage = null) }
     }
 
     fun clearErrorMessage() {
-        _manageSeniorsState.update { it.copy(errorMessage = null) }
-        _createSeniorState.update { it.copy(errorMessage = null) }
+        _uiState.update { it.copy(errorMessage = null) }
+        _createFormState.update { it.copy(errorMessage = null) }
     }
-
+    
     /**
-     * 加载指定老人的信息到创建表单，用于编辑模式
+     * 显示删除确认对话框
      */
-    fun loadSeniorForEdit(seniorId: String) {
-        viewModelScope.launch {
-            _createSeniorState.update { it.copy(isLoading = true, errorMessage = null) }
-            
-            val currentUid = authRepository.getCurrentUid() ?: ""
-            
-            seniorRepository.getSeniorById(seniorId)
-                .onSuccess { senior ->
-                    // 获取当前用户的关系信息
-                    val userRelationship = senior.caregiverRelationships[currentUid]
-                    
-                    _createSeniorState.update {
-                        it.copy(
-                            isLoading = false,
-                            name = senior.name,
-                            age = senior.age.toString(),
-                            gender = senior.gender,
-                            relationship = userRelationship?.relationship ?: "",
-                            nickname = userRelationship?.nickname ?: "",
-                            systolicBP = senior.healthHistory.bloodPressure?.systolic?.toString() ?: "",
-                            diastolicBP = senior.healthHistory.bloodPressure?.diastolic?.toString() ?: "",
-                            heartRate = senior.healthHistory.heartRate?.toString() ?: "",
-                            bloodSugar = senior.healthHistory.bloodSugar?.toString() ?: "",
-                            medicalConditions = senior.healthHistory.medicalConditions.joinToString(", "),
-                            medications = senior.healthHistory.medications.joinToString(", "),
-                            allergies = senior.healthHistory.allergies.joinToString(", ")
-                        )
-                    }
-                }
-                .onFailure { e ->
-                    _createSeniorState.update { it.copy(isLoading = false, errorMessage = e.message ?: "Failed to load senior") }
-                }
-        }
+    fun showDeleteConfirmation(seniorInfo: ManagedSeniorInfo) {
+        _uiState.update { it.copy(
+            showDeleteConfirmDialog = true,
+            seniorToDelete = seniorInfo
+        ) }
     }
-
+    
     /**
-     * 更新老人信息（仅创建者可操作）
+     * 取消删除
      */
-    fun updateSenior(seniorId: String, onSuccess: () -> Unit) {
-        val state = _createSeniorState.value
-        // 基本校验复用创建逻辑
-        var hasError = false
-        if (state.name.isBlank()) {
-            _createSeniorState.update { it.copy(nameError = "Name is required") }
-            hasError = true
-        }
-        val ageInt = state.age.toIntOrNull()
-        if (ageInt == null || ageInt <= 0) {
-            _createSeniorState.update { it.copy(ageError = "Valid age is required") }
-            hasError = true
-        }
-        if (hasError) return
-
-        viewModelScope.launch {
-            _createSeniorState.update { it.copy(isLoading = true, errorMessage = null) }
-
-            // 读取原始记录确保保留不可变字段
-            seniorRepository.getSeniorById(seniorId)
-                .onSuccess { original ->
-                    // 权限校验：仅创建者可编辑
-                    val currentUid = authRepository.getCurrentUid()
-                    if (currentUid == null || original.creatorId != currentUid) {
-                        _createSeniorState.update { it.copy(isLoading = false, errorMessage = "无权限编辑该老人账户") }
-                        return@onSuccess
-                    }
-
-                    val bloodPressure = if (state.systolicBP.isNotBlank() && state.diastolicBP.isNotBlank()) {
-                        val systolic = state.systolicBP.toIntOrNull()
-                        val diastolic = state.diastolicBP.toIntOrNull()
-                        if (systolic != null && diastolic != null) BloodPressureRecord(systolic, diastolic) else null
-                    } else null
-
-                    val medicalConditions = state.medicalConditions.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                    val medications = state.medications.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                    val allergies = state.allergies.split(",").map { it.trim() }.filter { it.isNotBlank() }
-
-                    // 重新计算头像类型（如果年龄或性别改变）
-                    val avatarType = AvatarHelper.getAvatarType(ageInt!!, state.gender)
-
-                    // 更新当前用户的关系信息
-                    val updatedRelationships = original.caregiverRelationships.toMutableMap()
-                    updatedRelationships[currentUid] = CaregiverRelationship(
-                        relationship = state.relationship,
-                        nickname = state.nickname,
-                        linkedAt = original.caregiverRelationships[currentUid]?.linkedAt ?: System.currentTimeMillis(),
-                        status = "active"
-                    )
-
-                    val updated = original.copy(
-                        name = state.name,
-                        age = ageInt,
-                        gender = state.gender,
-                        avatarType = avatarType,
-                        caregiverRelationships = updatedRelationships,
-                        healthHistory = HealthHistory(
-                            bloodPressure = bloodPressure,
-                            heartRate = state.heartRate.toIntOrNull(),
-                            bloodSugar = state.bloodSugar.toDoubleOrNull(),
-                            medicalConditions = medicalConditions,
-                            medications = medications,
-                            allergies = allergies
-                        )
-                    )
-
-                    seniorRepository.updateSenior(updated)
-                        .onSuccess {
-                            _createSeniorState.update { it.copy(isLoading = false) }
-                            // 刷新列表与提示
-                            loadSeniors()
-                            _manageSeniorsState.update { it.copy(successMessage = "老人信息已更新") }
-                            onSuccess()
-                        }
-                        .onFailure { e ->
-                            _createSeniorState.update { it.copy(isLoading = false, errorMessage = e.message ?: "更新失败") }
-                        }
-                }
-                .onFailure { e ->
-                    _createSeniorState.update { it.copy(isLoading = false, errorMessage = e.message ?: "未找到老人账户") }
-                }
-        }
-    }
-    /**
-     * 解除与某个老人的绑定（不影响创建者与其他护理者）
-     */
-    fun unlinkSenior(seniorId: String) {
-        viewModelScope.launch {
-            val caregiverId = authRepository.getCurrentUid() ?: return@launch
-            _manageSeniorsState.update { it.copy(isLoading = true, errorMessage = null, successMessage = null) }
-
-            seniorRepository.getSeniorById(seniorId)
-                .onSuccess { senior ->
-                    val updated = senior.copy(caregiverIds = senior.caregiverIds.filter { it != caregiverId })
-                    seniorRepository.updateSenior(updated)
-                        .onSuccess {
-                            _manageSeniorsState.update { it.copy(successMessage = "已解除绑定", isLoading = false) }
-                            loadSeniors()
-                        }
-                        .onFailure { e ->
-                            _manageSeniorsState.update { it.copy(errorMessage = e.message ?: "解除绑定失败", isLoading = false) }
-                        }
-                }
-                .onFailure { e ->
-                    _manageSeniorsState.update { it.copy(errorMessage = e.message ?: "未找到老人账户", isLoading = false) }
-                }
-        }
-    }
-
-    /**
-     * 删除自己创建的老人账户（需具备创建者权限）
-     */
-    fun deleteSenior(seniorId: String) {
-        viewModelScope.launch {
-            _manageSeniorsState.update { it.copy(isLoading = true, errorMessage = null, successMessage = null) }
-            seniorRepository.deleteSenior(seniorId)
-                .onSuccess {
-                    _manageSeniorsState.update { it.copy(successMessage = "已删除老人账户", isLoading = false) }
-                    loadSeniors()
-                }
-                .onFailure { e ->
-                    _manageSeniorsState.update { it.copy(errorMessage = e.message ?: "删除失败", isLoading = false) }
-                }
-        }
-    }
-    /**
-     * 加载当前用户创建的老人列表，用于CreateSeniorScreen展示
-     */
-    fun loadCreatedSeniorsForCreateScreen() {
-        viewModelScope.launch {
-            val caregiverId = authRepository.getCurrentUid() ?: return@launch
-            seniorRepository.getSeniorsByCreator(caregiverId)
-                .onSuccess { list ->
-                    _createSeniorState.update { it.copy(createdSeniors = list) }
-                }
-                .onFailure {
-                    _createSeniorState.update { it.copy(createdSeniors = emptyList()) }
-                }
-        }
+    fun cancelDelete() {
+        _uiState.update { it.copy(
+            showDeleteConfirmDialog = false,
+            seniorToDelete = null
+        ) }
     }
 }
+
+/**
+ * 管理老人页面 UI 状态
+ */
+data class ManageSeniorsUiState(
+    val createdSeniors: List<ManagedSeniorInfo> = emptyList(),
+    val linkedSeniors: List<ManagedSeniorInfo> = emptyList(),
+    val pendingRequests: List<CaregiverRelation> = emptyList(),
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
+    val successMessage: String? = null,
+    val currentUserId: String = "",
+    val showDeleteConfirmDialog: Boolean = false,
+    val seniorToDelete: ManagedSeniorInfo? = null
+)
+
+/**
+ * 创建老人表单状态
+ */
+data class CreateSeniorFormState(
+    val name: String = "",
+    val age: String = "",
+    val gender: String = "Male",
+    val relationship: String = "Son",  // Caregiver's relationship to senior
+    val nickname: String = "",  // Caregiver's nickname for senior (e.g., "Dad", "Mom")
+    val isLoading: Boolean = false,
+    val isSuccess: Boolean = false,
+    val errorMessage: String? = null,
+    val nameError: String? = null,
+    val ageError: String? = null,
+    // 创建成功后的账户信息
+    val createdEmail: String = "",
+    val createdPassword: String = "",
+    val qrCodeData: String = "",
+    val qrCodeBitmap: Bitmap? = null
+)
+
+/**
+ * 删除检查信息（用于UI显示）
+ */
+data class DeletionCheckInfo(
+    val canDelete: Boolean,              // 是否可以删除
+    val hasOtherCaregivers: Boolean,     // 是否有其他护理者
+    val otherCaregiversText: String,     // 其他护理者的文本描述
+    val seniorName: String,              // 老人姓名
+    val totalRelations: Int              // 总关系数
+)

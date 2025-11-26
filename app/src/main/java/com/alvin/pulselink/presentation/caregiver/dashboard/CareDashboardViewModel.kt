@@ -4,12 +4,12 @@ import android.util.Log
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.alvin.pulselink.domain.model.Senior
-import com.alvin.pulselink.domain.model.getDisplayNameFor
-import com.alvin.pulselink.domain.model.getRelationshipStringFor
+import com.alvin.pulselink.domain.model.HealthSummary
+import com.alvin.pulselink.domain.model.SeniorProfile
 import com.alvin.pulselink.domain.repository.AuthRepository
-import com.alvin.pulselink.domain.repository.HealthRepository
-import com.alvin.pulselink.domain.repository.SeniorRepository
+import com.alvin.pulselink.domain.usecase.health.GetHealthRecordsUseCase
+import com.alvin.pulselink.domain.usecase.profile.GetManagedSeniorsUseCase
+import com.alvin.pulselink.domain.usecase.profile.ManagedSeniorInfo
 import com.alvin.pulselink.util.AvatarHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,50 +19,56 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class CareDashboardUiState(
-    val lovedOnes: List<LovedOne> = emptyList(),
-    val goodCount: Int = 0,
-    val attentionCount: Int = 0,
-    val urgentCount: Int = 0,
-    val isLoading: Boolean = false,
-    val errorMessage: String? = null
-)
-
+/**
+ * Caregiver Dashboard ViewModel
+ * 
+ * 使用新的独立集合架构:
+ * - senior_profiles: 老人资料
+ * - caregiver_relations: 关系管理（包含权限）
+ * - health_records: 健康记录
+ */
 @HiltViewModel
 class CareDashboardViewModel @Inject constructor(
-    private val seniorRepository: SeniorRepository,
-    private val authRepository: AuthRepository,
-    private val healthRepository: HealthRepository
+    private val getManagedSeniorsUseCase: GetManagedSeniorsUseCase,
+    private val getHealthRecordsUseCase: GetHealthRecordsUseCase,
+    private val authRepository: AuthRepository
 ) : ViewModel() {
 
     companion object {
         private const val TAG = "DashboardVM"
     }
 
-    init {
-        Log.d(TAG, "========== CareDashboardViewModel INITIALIZED ==========")
-    }
-    
     private val _uiState = MutableStateFlow(CareDashboardUiState())
     val uiState: StateFlow<CareDashboardUiState> = _uiState.asStateFlow()
-    
+
     init {
-        loadSeniors()
+        Log.d(TAG, "========== CareDashboardViewModel INITIALIZED ==========")
+        loadDashboard()
     }
-    
-    fun loadSeniors() {
+
+    /**
+     * 加载仪表盘数据
+     */
+    fun loadDashboard() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             
-            val currentUserId = authRepository.getCurrentUid() ?: ""
-            Log.d(TAG, "========== loadSeniors() STARTED for caregiver: $currentUserId ==========")
+            val currentUserId = authRepository.getCurrentUid()
+            if (currentUserId.isNullOrBlank()) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = "未登录") }
+                return@launch
+            }
             
-            seniorRepository.getSeniorsByCaregiver(currentUserId)
-                .onSuccess { seniors ->
-                    Log.d(TAG, "Found ${seniors.size} seniors to load")
+            Log.d(TAG, "========== loadDashboard() for caregiver: $currentUserId ==========")
+            
+            // 1. 获取管理的老人列表
+            getManagedSeniorsUseCase(currentUserId)
+                .onSuccess { managedSeniors ->
+                    Log.d(TAG, "Found ${managedSeniors.size} managed seniors")
                     
-                    val lovedOnes = seniors.map { senior ->
-                        senior.toLovedOne(currentUserId)
+                    // 2. 为每个老人获取健康摘要并转换为 LovedOne
+                    val lovedOnes = managedSeniors.map { info ->
+                        convertToLovedOne(info, currentUserId)
                     }
                     
                     _uiState.update {
@@ -74,42 +80,59 @@ class CareDashboardViewModel @Inject constructor(
                             isLoading = false
                         )
                     }
+                    
                     Log.d(TAG, "Dashboard stats - Good: ${lovedOnes.count { it.status == HealthStatus.GOOD }}, " +
                             "Attention: ${lovedOnes.count { it.status == HealthStatus.ATTENTION }}, " +
                             "Urgent: ${lovedOnes.count { it.status == HealthStatus.URGENT }}")
                 }
                 .onFailure { error ->
-                    Log.e(TAG, "Failed to load seniors: ${error.message}")
+                    Log.e(TAG, "Failed to load managed seniors: ${error.message}")
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = error.message ?: "Failed to load seniors"
+                            errorMessage = error.message ?: "加载失败"
                         )
                     }
                 }
         }
     }
-    
-    private suspend fun Senior.toLovedOne(currentUserId: String): LovedOne {
-        // 获取称呼（nickname 或默认称呼）
-        val addressTitle = getDisplayNameFor(currentUserId)
+
+    /**
+     * 将 ManagedSeniorInfo 转换为 LovedOne
+     */
+    private suspend fun convertToLovedOne(
+        info: ManagedSeniorInfo,
+        currentUserId: String
+    ): LovedOne {
+        val profile = info.profile
+        val relation = info.relation
         
-        // 生成显示名称：称呼（真实名字）
-        val displayName = "$addressTitle ($name)"
+        // 获取头像 emoji
+        val emoji = AvatarHelper.getAvatarEmoji(profile.avatarType)
         
-        // 获取关系
-        val relationshipText = getRelationshipStringFor(currentUserId)
+        // 获取关系类型
+        val relationshipText = when (relation.relationship) {
+            "PRIMARY_CAREGIVER" -> "主要监护人"
+            "CAREGIVER" -> "监护人"
+            "FAMILY" -> "家属"
+            else -> "监护人"
+        }
         
-        // 获取表情符号（基于头像类型）
-        val emoji = getEmojiForAvatarType(avatarType)
-        
-        // 分析健康状态（从 health_data 集合读取真实数据）
-        val healthStatus = analyzeHealthStatus(this)
+        // 获取健康状态（如果有权限）
+        val healthStatus = if (info.canViewHealthData) {
+            getHealthStatusForSenior(profile.id, currentUserId)
+        } else {
+            HealthStatusInfo(
+                status = HealthStatus.GOOD,
+                message = "No permission to view health data",
+                color = Color.Gray
+            )
+        }
         
         return LovedOne(
-            id = id,
-            name = displayName,
-            actualName = name, // 保留真实姓名
+            id = profile.id,
+            name = profile.name,
+            nickname = relation.nickname,
             relationship = relationshipText,
             emoji = emoji,
             status = healthStatus.status,
@@ -118,69 +141,90 @@ class CareDashboardViewModel @Inject constructor(
             borderColor = healthStatus.color
         )
     }
-    
-    private fun getEmojiForAvatarType(avatarType: String): String {
-        // 使用 AvatarHelper 统一获取 emoji
-        return AvatarHelper.getAvatarEmoji(avatarType)
-    }
-    
-    private suspend fun analyzeHealthStatus(senior: Senior): HealthStatusInfo {
-        Log.d(TAG, "Analyzing health status for senior: ${senior.id}")
+
+    /**
+     * 获取老人的健康状态
+     */
+    private suspend fun getHealthStatusForSenior(
+        seniorProfileId: String,
+        requesterId: String
+    ): HealthStatusInfo {
+        Log.d(TAG, "Getting health status for senior: $seniorProfileId")
         
-        // 1. 获取 senior 的 Firebase Auth UID
-        val seniorUidResult = seniorRepository.getSeniorAuthUid(senior.id)
-        val seniorUid = seniorUidResult.getOrNull()
+        // 获取健康摘要
+        val summaryResult = getHealthRecordsUseCase.getHealthSummary(seniorProfileId, requesterId)
         
-        if (seniorUid == null) {
-            Log.w(TAG, "Could not get UID for senior ${senior.id}")
-            return HealthStatusInfo(
-                status = HealthStatus.GOOD,
-                message = "No health data available",
-                color = Color(0xFF10B981)
-            )
-        }
-        
-        Log.d(TAG, "Senior ${senior.id} has UID: $seniorUid")
-        
-        // 2. 获取最新的健康数据
-        val healthDataResult = healthRepository.getLatestHealthDataBySeniorUid(seniorUid)
-        val healthData = healthDataResult.getOrNull()
-        
-        if (healthData == null) {
-            Log.w(TAG, "No health data found for senior ${senior.id}")
-            return HealthStatusInfo(
-                status = HealthStatus.GOOD,
-                message = "No health data available",
-                color = Color(0xFF10B981)
-            )
-        }
-        
-        Log.d(TAG, "Senior ${senior.id} health data - BP: ${healthData.systolic}/${healthData.diastolic}, HR: ${healthData.heartRate}")
-        
-        // 3. 分析健康数据
-        return analyzeHealthStatusFromData(
-            systolic = healthData.systolic,
-            diastolic = healthData.diastolic,
-            heartRate = healthData.heartRate
+        return summaryResult.fold(
+            onSuccess = { summary ->
+                Log.d(TAG, "Health summary received - BP record: ${summary.latestBloodPressure}, HR record: ${summary.latestHeartRate}")
+                Log.d(TAG, "  Systolic: ${summary.latestSystolic}, Diastolic: ${summary.latestDiastolic}, HR: ${summary.latestHeartRateValue}")
+                analyzeHealthSummary(summary)
+            },
+            onFailure = { error ->
+                Log.w(TAG, "Failed to get health summary: ${error.message}", error)
+                HealthStatusInfo(
+                    status = HealthStatus.GOOD,
+                    message = "No health data available",
+                    color = Color(0xFF10B981)
+                )
+            }
         )
     }
-    
-    private fun analyzeHealthStatusFromData(
-        systolic: Int,
-        diastolic: Int,
-        heartRate: Int
-    ): HealthStatusInfo {
-        // 检查血压
+
+    /**
+     * 分析健康摘要，确定状态
+     */
+    private fun analyzeHealthSummary(summary: HealthSummary): HealthStatusInfo {
+        val systolic = summary.latestSystolic
+        val diastolic = summary.latestDiastolic
+        val heartRate = summary.latestHeartRateValue
+        
+        Log.d(TAG, "Analyzing health summary - systolic: $systolic, diastolic: $diastolic, heartRate: $heartRate")
+        
+        if (systolic == null && heartRate == null) {
+            Log.d(TAG, "No health data available")
+            return HealthStatusInfo(
+                status = HealthStatus.GOOD,
+                message = "No health data available",
+                color = Color(0xFF10B981)
+            )
+        }
+        
+        // 分析血压
         val bpStatus = when {
-            systolic > 160 || diastolic > 100 -> HealthStatus.URGENT
-            systolic > 140 || diastolic > 90 -> HealthStatus.ATTENTION
+            systolic != null && diastolic != null -> when {
+                systolic > 160 || diastolic > 100 -> {
+                    Log.d(TAG, "BP Status: URGENT (systolic=$systolic, diastolic=$diastolic)")
+                    HealthStatus.URGENT
+                }
+                systolic > 140 || diastolic > 90 -> {
+                    Log.d(TAG, "BP Status: ATTENTION (systolic=$systolic, diastolic=$diastolic)")
+                    HealthStatus.ATTENTION
+                }
+                else -> {
+                    Log.d(TAG, "BP Status: GOOD (systolic=$systolic, diastolic=$diastolic)")
+                    HealthStatus.GOOD
+                }
+            }
             else -> HealthStatus.GOOD
         }
         
-        // 检查心率
+        // 分析心率
         val hrStatus = when {
-            heartRate > 120 || heartRate < 50 -> HealthStatus.URGENT
-            heartRate > 100 || heartRate < 60 -> HealthStatus.ATTENTION
+            heartRate != null -> when {
+                heartRate > 120 || heartRate < 50 -> {
+                    Log.d(TAG, "HR Status: URGENT (heartRate=$heartRate)")
+                    HealthStatus.URGENT
+                }
+                heartRate > 100 || heartRate < 60 -> {
+                    Log.d(TAG, "HR Status: ATTENTION (heartRate=$heartRate)")
+                    HealthStatus.ATTENTION
+                }
+                else -> {
+                    Log.d(TAG, "HR Status: GOOD (heartRate=$heartRate)")
+                    HealthStatus.GOOD
+                }
+            }
             else -> HealthStatus.GOOD
         }
         
@@ -191,23 +235,21 @@ class CareDashboardViewModel @Inject constructor(
             else -> HealthStatus.GOOD
         }
         
+        Log.d(TAG, "Final health status: $finalStatus (BP: $bpStatus, HR: $hrStatus)")
+        
         // 生成状态消息
         val message = when (finalStatus) {
-            HealthStatus.URGENT -> {
-                when {
-                    systolic > 160 -> "Blood pressure critically high!"
-                    heartRate > 120 -> "Heart rate critically high!"
-                    heartRate < 50 -> "Heart rate critically low!"
-                    else -> "Health metrics need urgent attention"
-                }
+            HealthStatus.URGENT -> when {
+                systolic != null && systolic > 160 -> "High blood pressure, needs urgent attention!"
+                heartRate != null && heartRate > 120 -> "Heart rate too fast, needs urgent attention!"
+                heartRate != null && heartRate < 50 -> "Heart rate too slow, needs urgent attention!"
+                else -> "Health metrics need urgent attention"
             }
-            HealthStatus.ATTENTION -> {
-                when {
-                    systolic > 140 -> "Blood pressure elevated"
-                    heartRate > 100 -> "Heart rate elevated"
-                    heartRate < 60 -> "Heart rate low"
-                    else -> "Health metrics need attention"
-                }
+            HealthStatus.ATTENTION -> when {
+                systolic != null && systolic > 140 -> "Blood pressure elevated"
+                heartRate != null && heartRate > 100 -> "Heart rate elevated"
+                heartRate != null && heartRate < 60 -> "Heart rate low"
+                else -> "Health metrics need attention"
             }
             HealthStatus.GOOD -> "All metrics normal"
         }
@@ -218,14 +260,53 @@ class CareDashboardViewModel @Inject constructor(
             HealthStatus.URGENT -> Color(0xFFEF4444)
         }
         
-        Log.d(TAG, "Health analysis - BP: $systolic/$diastolic, HR: $heartRate → Status: $finalStatus ($message)")
+        Log.d(TAG, "Health analysis - BP: $systolic/$diastolic, HR: $heartRate → Status: $finalStatus")
         
         return HealthStatusInfo(finalStatus, message, color)
     }
-    
-    private data class HealthStatusInfo(
-        val status: HealthStatus,
-        val message: String,
-        val color: Color
-    )
 }
+
+/**
+ * Dashboard UI 状态
+ */
+data class CareDashboardUiState(
+    val lovedOnes: List<LovedOne> = emptyList(),
+    val goodCount: Int = 0,
+    val attentionCount: Int = 0,
+    val urgentCount: Int = 0,
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null
+)
+
+/**
+ * 老人卡片数据
+ */
+data class LovedOne(
+    val id: String,
+    val name: String,
+    val nickname: String,
+    val relationship: String,
+    val emoji: String,
+    val status: HealthStatus,
+    val statusMessage: String,
+    val statusColor: Color,
+    val borderColor: Color
+)
+
+/**
+ * 健康状态枚举
+ */
+enum class HealthStatus {
+    GOOD,
+    ATTENTION,
+    URGENT
+}
+
+/**
+ * 健康状态信息
+ */
+private data class HealthStatusInfo(
+    val status: HealthStatus,
+    val message: String,
+    val color: Color
+)

@@ -9,7 +9,7 @@ import com.alvin.pulselink.data.local.LocalDataSource
 import com.alvin.pulselink.data.speech.AudioRecorderManager
 import com.alvin.pulselink.domain.model.ChatMessage
 import com.alvin.pulselink.domain.repository.ChatRepository
-import com.alvin.pulselink.domain.repository.SeniorRepository
+import com.alvin.pulselink.domain.repository.SeniorProfileRepository
 import com.alvin.pulselink.domain.usecase.ChatWithAIUseCase
 import com.alvin.pulselink.domain.usecase.GetHealthDataUseCase
 import com.alvin.pulselink.domain.usecase.VoiceToTextUseCase
@@ -29,7 +29,7 @@ class AssistantViewModel @Inject constructor(
     private val chatRepository: ChatRepository,
     private val audioRecorderManager: AudioRecorderManager,
     private val voiceToTextUseCase: VoiceToTextUseCase,
-    private val seniorRepository: SeniorRepository,
+    private val seniorProfileRepository: SeniorProfileRepository,
     private val localDataSource: LocalDataSource
 ): ViewModel() {
 
@@ -113,14 +113,14 @@ class AssistantViewModel @Inject constructor(
                 }
                 
                 // 获取 senior 数据
-                val result = seniorRepository.getSeniorById(seniorId)
-                result.onSuccess { senior ->
-                    val avatarEmoji = if (senior.avatarType.isNotBlank()) {
-                        AvatarHelper.getAvatarEmoji(senior.avatarType)
+                val result = seniorProfileRepository.getProfileById(seniorId)
+                result.onSuccess { profile ->
+                    val avatarEmoji = if (profile.avatarType.isNotBlank()) {
+                        AvatarHelper.getAvatarEmoji(profile.avatarType)
                     } else {
-                        AvatarHelper.getAvatarEmojiByAgeGender(senior.age, senior.gender)
+                        AvatarHelper.getAvatarEmojiByAgeGender(profile.age, profile.gender)
                     }
-                    Log.d(TAG, "User avatar loaded: $avatarEmoji (type: ${senior.avatarType})")
+                    Log.d(TAG, "User avatar loaded: $avatarEmoji (type: ${profile.avatarType})")
                     _uiState.update { it.copy(userAvatarEmoji = avatarEmoji) }
                 }.onFailure { e ->
                     Log.e(TAG, "Failed to load user avatar", e)

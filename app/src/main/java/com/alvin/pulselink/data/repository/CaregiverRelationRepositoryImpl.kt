@@ -29,7 +29,7 @@ class CaregiverRelationRepositoryImpl @Inject constructor(
             CaregiverRelation(
                 id = getString("id") ?: "",
                 caregiverId = getString("caregiverId") ?: "",
-                seniorProfileId = getString("seniorProfileId") ?: "",
+                seniorId = getString("seniorId") ?: "",
                 relationship = getString("relationship") ?: "",
                 nickname = getString("nickname") ?: "",
                 status = getString("status") ?: CaregiverRelation.STATUS_PENDING,
@@ -43,7 +43,8 @@ class CaregiverRelationRepositoryImpl @Inject constructor(
                 canEditHealthData = getBoolean("canEditHealthData") ?: false,
                 canViewReminders = getBoolean("canViewReminders") ?: true,
                 canEditReminders = getBoolean("canEditReminders") ?: true,
-                canApproveRequests = getBoolean("canApproveRequests") ?: false
+                canApproveRequests = getBoolean("canApproveRequests") ?: false,
+                virtualAccountPassword = getString("virtualAccountPassword")
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse relation ${id}", e)
@@ -55,7 +56,7 @@ class CaregiverRelationRepositoryImpl @Inject constructor(
         return hashMapOf(
             "id" to id,
             "caregiverId" to caregiverId,
-            "seniorProfileId" to seniorProfileId,
+            "seniorId" to seniorId,
             "relationship" to relationship,
             "nickname" to nickname,
             "status" to status,
@@ -69,7 +70,8 @@ class CaregiverRelationRepositoryImpl @Inject constructor(
             "canEditHealthData" to canEditHealthData,
             "canViewReminders" to canViewReminders,
             "canEditReminders" to canEditReminders,
-            "canApproveRequests" to canApproveRequests
+            "canApproveRequests" to canApproveRequests,
+            "virtualAccountPassword" to virtualAccountPassword
         )
     }
     
@@ -130,7 +132,7 @@ class CaregiverRelationRepositoryImpl @Inject constructor(
     override suspend fun getRelationsBySenior(seniorProfileId: String): Result<List<CaregiverRelation>> {
         return try {
             val snapshot = relationsCollection
-                .whereEqualTo("seniorProfileId", seniorProfileId)
+                .whereEqualTo("seniorId", seniorProfileId)
                 .get().await()
             
             val relations = snapshot.documents.mapNotNull { it.toCaregiverRelation() }
@@ -144,7 +146,7 @@ class CaregiverRelationRepositoryImpl @Inject constructor(
     override suspend fun getActiveRelationsBySenior(seniorProfileId: String): Result<List<CaregiverRelation>> {
         return try {
             val snapshot = relationsCollection
-                .whereEqualTo("seniorProfileId", seniorProfileId)
+                .whereEqualTo("seniorId", seniorProfileId)
                 .whereEqualTo("status", CaregiverRelation.STATUS_ACTIVE)
                 .get().await()
             
@@ -159,7 +161,7 @@ class CaregiverRelationRepositoryImpl @Inject constructor(
     override suspend fun getPendingRelationsBySenior(seniorProfileId: String): Result<List<CaregiverRelation>> {
         return try {
             val snapshot = relationsCollection
-                .whereEqualTo("seniorProfileId", seniorProfileId)
+                .whereEqualTo("seniorId", seniorProfileId)
                 .whereEqualTo("status", CaregiverRelation.STATUS_PENDING)
                 .get().await()
             
@@ -224,7 +226,7 @@ class CaregiverRelationRepositoryImpl @Inject constructor(
     override suspend fun createRelation(relation: CaregiverRelation): Result<CaregiverRelation> {
         return try {
             val relationId = relation.id.ifEmpty { 
-                CaregiverRelation.generateId(relation.caregiverId, relation.seniorProfileId)
+                CaregiverRelation.generateId(relation.caregiverId, relation.seniorId)
             }
             val relationWithId = relation.copy(id = relationId)
             
@@ -349,7 +351,7 @@ class CaregiverRelationRepositoryImpl @Inject constructor(
                 return Result.success(emptyList())
             }
             
-            val profileIds = relations.map { it.seniorProfileId }.distinct()
+            val profileIds = relations.map { it.seniorId }.distinct()
             
             // Firestore whereIn 限制最多 30 个
             val profiles = mutableListOf<SeniorProfile>()
@@ -397,7 +399,7 @@ class CaregiverRelationRepositoryImpl @Inject constructor(
             
             // 添加通过关系管理的老人
             relations.forEach { relation ->
-                val profile = relationProfiles.find { it.id == relation.seniorProfileId }
+                val profile = relationProfiles.find { it.id == relation.seniorId }
                 if (profile != null) {
                     result.add(Pair(profile, relation))
                 }
@@ -409,7 +411,7 @@ class CaregiverRelationRepositoryImpl @Inject constructor(
                     val creatorRelation = CaregiverRelation(
                         id = CaregiverRelation.generateId(caregiverId, profile.id),
                         caregiverId = caregiverId,
-                        seniorProfileId = profile.id,
+                        seniorId = profile.id,
                         relationship = "Creator",
                         status = CaregiverRelation.STATUS_ACTIVE,
                         createdAt = profile.createdAt,

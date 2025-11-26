@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.data.local.LocalDataSource
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.repository.HealthRepository
-import com.alvin.pulselink.domain.repository.SeniorRepository
+import com.alvin.pulselink.domain.repository.SeniorProfileRepository
 import com.alvin.pulselink.util.AvatarHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +21,7 @@ import javax.inject.Inject
 class ProfileViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val localDataSource: LocalDataSource,
-    private val seniorRepository: SeniorRepository,
+    private val seniorProfileRepository: SeniorProfileRepository,
     private val healthRepository: HealthRepository
 ) : ViewModel() {
     
@@ -61,11 +61,11 @@ class ProfileViewModel @Inject constructor(
                 
                 Log.d(TAG, "✅ Loading profile for senior: $seniorId")
                 
-                // 2️⃣ 从 Firestore 获取 Senior 数据
-                val seniorResult = seniorRepository.getSeniorById(seniorId)
+                // 2️⃣ 从 Firestore 获取 SeniorProfile 数据（使用新架构）
+                val profileResult = seniorProfileRepository.getProfileById(seniorId)
                 
-                if (seniorResult.isFailure) {
-                    val error = seniorResult.exceptionOrNull()
+                if (profileResult.isFailure) {
+                    val error = profileResult.exceptionOrNull()
                     Log.e(TAG, "❌ Failed to load senior data: ${error?.message}", error)
                     _uiState.update { 
                         it.copy(
@@ -76,26 +76,26 @@ class ProfileViewModel @Inject constructor(
                     return@launch
                 }
                 
-                val senior = seniorResult.getOrNull()!!
-                Log.d(TAG, "✅ Senior data loaded: name=${senior.name}, age=${senior.age}, gender=${senior.gender}, avatarType=${senior.avatarType}")
+                val profile = profileResult.getOrNull()!!
+                Log.d(TAG, "✅ Senior data loaded: name=${profile.name}, age=${profile.age}, gender=${profile.gender}, avatarType=${profile.avatarType}")
                 
                 // 3️⃣ 计算使用天数 (从 createdAt 到现在)
                 val currentTimeMillis = System.currentTimeMillis()
-                val daysDiff = TimeUnit.MILLISECONDS.toDays(currentTimeMillis - senior.createdAt)
+                val daysDiff = TimeUnit.MILLISECONDS.toDays(currentTimeMillis - profile.createdAt)
                 // 如果是 0 天（注册当天），则显示为 1 天
                 val daysUsed = (daysDiff.toInt().coerceAtLeast(0) + 1)
                 
-                Log.d(TAG, "📅 Days used: $daysUsed (created: ${senior.createdAt}, now: $currentTimeMillis, diff: $daysDiff)")
+                Log.d(TAG, "📅 Days used: $daysUsed (created: ${profile.createdAt}, now: $currentTimeMillis, diff: $daysDiff)")
                 
                 // 4️⃣ 根据 avatarType 获取 emoji
-                val avatarEmoji = if (senior.avatarType.isNotBlank()) {
-                    AvatarHelper.getAvatarEmoji(senior.avatarType)
+                val avatarEmoji = if (profile.avatarType.isNotBlank()) {
+                    AvatarHelper.getAvatarEmoji(profile.avatarType)
                 } else {
                     // 如果没有 avatarType，根据年龄和性别生成
                     Log.w(TAG, "⚠️ No avatarType found, generating from age and gender")
-                    AvatarHelper.getAvatarEmojiByAgeGender(senior.age, senior.gender)
+                    AvatarHelper.getAvatarEmojiByAgeGender(profile.age, profile.gender)
                 }
-                Log.d(TAG, "👤 Avatar emoji: $avatarEmoji (type: ${senior.avatarType})")
+                Log.d(TAG, "👤 Avatar emoji: $avatarEmoji (type: ${profile.avatarType})")
                 
                 // 5️⃣ 获取最新的健康数据 - 从 health_data 集合读取
                 Log.d(TAG, "🔍 Fetching latest health data...")
@@ -114,10 +114,10 @@ class ProfileViewModel @Inject constructor(
                     
                     _uiState.update { 
                         it.copy(
-                            userName = senior.name,
-                            age = senior.age,
-                            gender = senior.gender,
-                            avatarType = senior.avatarType,
+                            userName = profile.name,
+                            age = profile.age,
+                            gender = profile.gender,
+                            avatarType = profile.avatarType,
                             avatarEmoji = avatarEmoji,
                             daysUsed = daysUsed,
                             bloodPressure = "${latestHealthData.systolic}/${latestHealthData.diastolic}",
@@ -132,10 +132,10 @@ class ProfileViewModel @Inject constructor(
                     // 没有健康数据时仍然显示基本信息
                     _uiState.update { 
                         it.copy(
-                            userName = senior.name,
-                            age = senior.age,
-                            gender = senior.gender,
-                            avatarType = senior.avatarType,
+                            userName = profile.name,
+                            age = profile.age,
+                            gender = profile.gender,
+                            avatarType = profile.avatarType,
                             avatarEmoji = avatarEmoji,
                             daysUsed = daysUsed,
                             bloodPressure = "--/--",

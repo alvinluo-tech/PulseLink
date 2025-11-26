@@ -66,7 +66,7 @@ class SaveHealthRecordUseCase @Inject constructor(
         return try {
             val record = HealthRecord(
                 id = "", // 由 Repository 生成
-                seniorProfileId = seniorProfileId,
+                seniorId = seniorProfileId,
                 type = HealthRecord.TYPE_BLOOD_PRESSURE,
                 systolic = systolic,
                 diastolic = diastolic,
@@ -110,7 +110,7 @@ class SaveHealthRecordUseCase @Inject constructor(
         return try {
             val record = HealthRecord(
                 id = "",
-                seniorProfileId = seniorProfileId,
+                seniorId = seniorProfileId,
                 type = HealthRecord.TYPE_HEART_RATE,
                 systolic = null,
                 diastolic = null,
@@ -154,7 +154,7 @@ class SaveHealthRecordUseCase @Inject constructor(
         return try {
             val record = HealthRecord(
                 id = "",
-                seniorProfileId = seniorProfileId,
+                seniorId = seniorProfileId,
                 type = HealthRecord.TYPE_BLOOD_SUGAR,
                 systolic = null,
                 diastolic = null,
@@ -198,7 +198,7 @@ class SaveHealthRecordUseCase @Inject constructor(
         return try {
             val record = HealthRecord(
                 id = "",
-                seniorProfileId = seniorProfileId,
+                seniorId = seniorProfileId,
                 type = HealthRecord.TYPE_WEIGHT,
                 systolic = null,
                 diastolic = null,

@@ -17,9 +17,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.alvin.pulselink.util.RelationshipHelper
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -30,9 +33,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.alvin.pulselink.domain.model.Senior
+import com.alvin.pulselink.domain.model.SeniorProfile
+import com.alvin.pulselink.domain.usecase.profile.ManagedSeniorInfo
 import com.alvin.pulselink.util.AvatarHelper
-import com.alvin.pulselink.util.RelationshipHelper
+import com.alvin.pulselink.util.QRCodeGenerator
 import kotlinx.coroutines.launch
 
 /**
@@ -46,12 +50,12 @@ fun CreateSeniorScreen(
     viewModel: ManageSeniorsViewModel = hiltViewModel(),
     onNavigateBack: () -> Unit
 ) {
-    val createState by viewModel.createSeniorState.collectAsStateWithLifecycle()
-    val manageState by viewModel.manageSeniorsState.collectAsStateWithLifecycle()
+    val createState by viewModel.createFormState.collectAsStateWithLifecycle()
+    val manageState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var showCreateForm by remember { mutableStateOf(false) }
 
-    // Get created seniors (using createdSeniors from manageSeniorsState)
+    // Get created seniors (using createdSeniors from uiState)
     val createdSeniors = manageState.createdSeniors
 
     // Load seniors list
@@ -187,7 +191,7 @@ private fun EmptyState(onCreateClick: () -> Unit) {
 }
 
 @Composable
-private fun SeniorsList(seniors: List<Senior>) {
+private fun SeniorsList(seniors: List<ManagedSeniorInfo>) {
     LazyColumn(
         modifier = Modifier.padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -200,34 +204,24 @@ private fun SeniorsList(seniors: List<Senior>) {
                 color = Color(0xFF2C3E50)
             )
         }
-        items(seniors) { SeniorCard(it) }
+        items(seniors) { seniorInfo -> 
+            SeniorCard(seniorInfo.profile) 
+        }
         item { Spacer(Modifier.height(80.dp)) }
     }
 }
 
 @Composable
-private fun SeniorCard(senior: Senior, viewModel: ManageSeniorsViewModel = hiltViewModel()) {
+private fun SeniorCard(senior: SeniorProfile, viewModel: ManageSeniorsViewModel = hiltViewModel()) {
     val clipboardManager = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    var showQRCodeDialog by remember { mutableStateOf(false) }
-    var qrCodeBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var showQRDialog by remember { mutableStateOf(false) }
+    var qrPassword by remember { mutableStateOf("") }
+    var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
     
-    val manageState by viewModel.manageSeniorsState.collectAsStateWithLifecycle()
-    val currentUserId = manageState.currentUserId
-    
-    // Get avatar emoji based on age and gender
+    // Get avatar emoji based on avatarType
     val avatarEmoji = AvatarHelper.getAvatarEmoji(senior.avatarType)
-    
-    // Get current user's relationship
-    val userRelationship = senior.caregiverRelationships[currentUserId]
-    val displayName = if (userRelationship?.nickname?.isNotBlank() == true) {
-        userRelationship.nickname
-    } else if (userRelationship?.relationship?.isNotBlank() == true) {
-        RelationshipHelper.getDefaultAddressTitle(userRelationship.relationship, senior.gender)
-    } else {
-        senior.name
-    }
     
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -261,23 +255,10 @@ private fun SeniorCard(senior: Senior, viewModel: ManageSeniorsViewModel = hiltV
                     
                     Column {
                         Text(
-                            text = displayName,
+                            text = senior.name,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
-                        Text(
-                            text = senior.name,
-                            fontSize = 13.sp,
-                            color = Color(0xFF64748B)
-                        )
-                        if (userRelationship?.relationship?.isNotBlank() == true) {
-                            Text(
-                                text = userRelationship.relationship,
-                                fontSize = 13.sp,
-                                color = Color(0xFF7C3AED),
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -334,45 +315,56 @@ private fun SeniorCard(senior: Senior, viewModel: ManageSeniorsViewModel = hiltV
             
             Spacer(Modifier.height(16.dp))
             
-            // QR Code button
+            // View QR Code Button
             Button(
                 onClick = {
-                    // Generate QR code data
-                    val qrData = """
-                        {
-                          "type": "pulselink_login",
-                          "id": "${senior.id}",
-                          "password": "${senior.password}"
-                        }
-                    """.trimIndent()
-                    
-                    // Generate QR code image
-                    qrCodeBitmap = com.alvin.pulselink.util.QRCodeGenerator.generateQRCode(qrData)
-                    showQRCodeDialog = true
+                    scope.launch {
+                        viewModel.getSeniorCredentials(senior.id)
+                            .onSuccess { (id, password) ->
+                                qrPassword = password
+                                val qrData = """
+                                    {
+                                      "type": "pulselink_login",
+                                      "id": "$id",
+                                      "password": "$password"
+                                    }
+                                """.trimIndent()
+                                qrBitmap = QRCodeGenerator.generateQRCode(qrData)
+                                showQRDialog = true
+                            }
+                            .onFailure { error ->
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        message = error.message ?: "获取凭据失败",
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
+                            }
+                    }
                 },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6)),
-                enabled = senior.password.isNotBlank()
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF8B5CF6)
+                )
             ) {
                 Icon(
-                    imageVector = Icons.Default.QrCodeScanner,
+                    imageVector = Icons.Default.QrCode2,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("View Login QR Code", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("View Login QR Code")
             }
         }
     }
     
-    // QR Code dialog
-    if (showQRCodeDialog) {
+    // QR Code Dialog
+    if (showQRDialog) {
         QRCodeDialog(
             seniorId = senior.id,
-            password = senior.password,
-            qrCodeBitmap = qrCodeBitmap,
-            onDismiss = { showQRCodeDialog = false }
+            password = qrPassword,
+            qrCodeBitmap = qrBitmap,
+            onDismiss = { showQRDialog = false }
         )
     }
 }
@@ -397,8 +389,9 @@ private fun InfoItem(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CreateForm(state: CreateSeniorUiState, viewModel: ManageSeniorsViewModel) {
+private fun CreateForm(state: CreateSeniorFormState, viewModel: ManageSeniorsViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -420,102 +413,96 @@ private fun CreateForm(state: CreateSeniorUiState, viewModel: ManageSeniorsViewM
                     }
                 }
             }
-            
-            // Relationship selection (Who you are to the senior)
-            Column {
-                Text("You are the senior's...", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color(0xFF64748B))
-                Spacer(Modifier.height(8.dp))
+        }
+
+        // Relationship Information
+        FormCard("Your Relationship") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "You are the senior's... *",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF64748B)
+                )
                 
-                // Common relationships in a grid
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        RelationshipChip("Son", state.relationship == "Son", Modifier.weight(1f)) { 
-                            viewModel.onRelationshipChanged("Son") 
-                        }
-                        RelationshipChip("Daughter", state.relationship == "Daughter", Modifier.weight(1f)) { 
-                            viewModel.onRelationshipChanged("Daughter") 
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        RelationshipChip("Grandson", state.relationship == "Grandson", Modifier.weight(1f)) { 
-                            viewModel.onRelationshipChanged("Grandson") 
-                        }
-                        RelationshipChip("Granddaughter", state.relationship == "Granddaughter", Modifier.weight(1f)) { 
-                            viewModel.onRelationshipChanged("Granddaughter") 
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        RelationshipChip("Spouse", state.relationship == "Spouse", Modifier.weight(1f)) { 
-                            viewModel.onRelationshipChanged("Spouse") 
-                        }
-                        RelationshipChip("Sibling", state.relationship == "Sibling", Modifier.weight(1f)) { 
-                            viewModel.onRelationshipChanged("Sibling") 
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        RelationshipChip("Friend", state.relationship == "Friend", Modifier.weight(1f)) { 
-                            viewModel.onRelationshipChanged("Friend") 
-                        }
-                        RelationshipChip("Caregiver", state.relationship == "Caregiver", Modifier.weight(1f)) { 
-                            viewModel.onRelationshipChanged("Caregiver") 
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        RelationshipChip("Other", state.relationship == "Other", Modifier.weight(1f)) { 
-                            viewModel.onRelationshipChanged("Other") 
-                        }
-                        // Empty space for symmetry
-                        Spacer(Modifier.weight(1f))
-                    }
-                }
+                var expanded by remember { mutableStateOf(false) }
+                val relationships = RelationshipHelper.getRelationshipOptions()
                 
-                state.relationshipError?.let {
-                    Spacer(Modifier.height(4.dp))
-                    Text(it, color = MaterialTheme.colorScheme.error, fontSize= 12.sp)
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = state.relationship,
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedContainerColor = Color(0xFFF9FAFB),
+                            focusedContainerColor = Color.White,
+                            unfocusedBorderColor = Color(0xFFE5E7EB),
+                            focusedBorderColor = Color(0xFF8B5CF6)
+                        ),
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.People,
+                                null,
+                                Modifier.size(20.dp),
+                                tint = Color(0xFF8B5CF6)
+                            )
+                        }
+                    )
+                    
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        relationships.forEach { relationship ->
+                            DropdownMenuItem(
+                                text = { Text(relationship) },
+                                onClick = {
+                                    viewModel.onRelationshipChanged(relationship, state.gender)
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
                 }
             }
             
-            // How you call them (Nickname) - Optional
-            Column {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text("How you call them", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color(0xFF64748B))
-                    Text("(Optional)", fontSize = 12.sp, color = Color(0xFF9CA3AF))
-                }
-                Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(16.dp))
+            
+            // Nickname field with auto-mapped default
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "How you call them",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF64748B)
+                )
                 
-                val nicknameAge = state.age.toIntOrNull() ?: 0
-                val defaultNickname = if (state.relationship.isNotBlank() && nicknameAge > 0) {
-                    RelationshipHelper.getDefaultAddressTitle(state.relationship, state.gender)
-                } else {
-                    "e.g., Dad, Mom, Grandpa"
-                }
+                val defaultNickname = RelationshipHelper.getDefaultAddressTitle(state.relationship, state.gender)
                 
                 OutlinedTextField(
                     value = state.nickname,
                     onValueChange = viewModel::onNicknameChanged,
-                    placeholder = { Text(defaultNickname, color = Color(0xFF9CA3AF)) },
+                    placeholder = { Text(defaultNickname, color = Color(0xFFBDBDBD)) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Badge,
+                            null,
+                            Modifier.size(20.dp),
+                            tint = Color(0xFF8B5CF6)
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color(0xFFF9FAFB),
                         focusedContainerColor = Color.White,
                         unfocusedBorderColor = Color(0xFFE5E7EB),
                         focusedBorderColor = Color(0xFF8B5CF6)
@@ -524,31 +511,37 @@ private fun CreateForm(state: CreateSeniorUiState, viewModel: ManageSeniorsViewM
                 )
                 
                 Text(
-                    "Leave blank to use: $defaultNickname",
+                    "Default: $defaultNickname (will be used if left blank)",
                     fontSize = 12.sp,
-                    color = Color(0xFF9CA3AF),
-                    modifier = Modifier.padding(top = 4.dp)
+                    color = Color(0xFF9CA3AF)
                 )
             }
         }
 
-        // Health History
-        FormCard("Health History") {
-            Text("Blood Pressure", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FormField("Systolic", state.systolicBP, viewModel::onSystolicBPChanged, "120", keyboardType = KeyboardType.Number, suffix = "mmHg", modifier = Modifier.weight(1f))
-                FormField("Diastolic", state.diastolicBP, viewModel::onDiastolicBPChanged, "80", keyboardType = KeyboardType.Number, suffix = "mmHg", modifier = Modifier.weight(1f))
+        // Info note about relationship
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(Color(0xFFF0F9FF))
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Icon(
+                    Icons.Default.Info,
+                    null,
+                    tint = Color(0xFF0EA5E9),
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    "After creating the account, the senior can log in with the generated credentials. You can set your relationship and nickname later in settings.",
+                    fontSize = 13.sp,
+                    color = Color(0xFF0369A1),
+                    lineHeight = 18.sp
+                )
             }
-            state.bpError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-            
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FormField("Heart Rate", state.heartRate, viewModel::onHeartRateChanged, "72", keyboardType = KeyboardType.Number, suffix = "bpm", leadingIcon = Icons.Default.Favorite, modifier = Modifier.weight(1f))
-                FormField("Blood Sugar", state.bloodSugar, viewModel::onBloodSugarChanged, "5.5", keyboardType = KeyboardType.Decimal, suffix = "mmol/L", leadingIcon = Icons.Default.Bloodtype, modifier = Modifier.weight(1f))
-            }
-            
-            FormField("Medical Conditions", state.medicalConditions, viewModel::onMedicalConditionsChanged, "Hypertension, Diabetes", leadingIcon = Icons.Default.MedicalServices, multiline = true)
-            FormField("Medications", state.medications, viewModel::onMedicationsChanged, "Aspirin, Metformin", leadingIcon = Icons.Default.Medication, multiline = true)
-            FormField("Allergies", state.allergies, viewModel::onAllergiesChanged, "Penicillin, Pollen", leadingIcon = Icons.Default.Warning, multiline = true)
         }
 
         // Create Button
@@ -645,21 +638,21 @@ private fun GenderChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun RelationshipChip(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun RelationshipChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        modifier = modifier,
         shape = RoundedCornerShape(12.dp),
         color = if (selected) Color(0xFF8B5CF6) else Color(0xFFF9FAFB),
-        border = BorderStroke(1.dp, if (selected) Color(0xFF8B5CF6) else Color(0xFFE5E7EB))
+        border = BorderStroke(1.dp, if (selected) Color(0xFF8B5CF6) else Color(0xFFE5E7EB)),
+        modifier = Modifier.width(140.dp)
     ) {
         Text(
             label,
-            fontSize = 14.sp,
+            fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = if (selected) Color.White else Color(0xFF6B7280),
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            textAlign = TextAlign.Center
         )
     }
 }

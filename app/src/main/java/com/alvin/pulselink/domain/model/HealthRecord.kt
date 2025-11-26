@@ -10,7 +10,7 @@ package com.alvin.pulselink.domain.model
  */
 data class HealthRecord(
     val id: String = "",                            // 记录ID (自动生成)
-    val seniorProfileId: String = "",               // 老人档案 ID (indexed)
+    val seniorId: String = "",                      // 老人 ID (即 Profile ID, indexed)
     val type: String = TYPE_BLOOD_PRESSURE,         // 记录类型
     val recordedAt: Long = System.currentTimeMillis(),
     val recordedBy: String = "",                    // 记录者 UID（老人自己或护理者）
@@ -32,23 +32,23 @@ data class HealthRecord(
     val notes: String = ""
 ) {
     companion object {
-        const val TYPE_BLOOD_PRESSURE = "blood_pressure"
-        const val TYPE_HEART_RATE = "heart_rate"
-        const val TYPE_BLOOD_SUGAR = "blood_sugar"
-        const val TYPE_WEIGHT = "weight"
+        const val TYPE_BLOOD_PRESSURE = "BLOOD_PRESSURE"
+        const val TYPE_HEART_RATE = "HEART_RATE"
+        const val TYPE_BLOOD_SUGAR = "BLOOD_SUGAR"
+        const val TYPE_WEIGHT = "WEIGHT"
         
         /**
          * 创建血压记录
          */
         fun bloodPressure(
-            seniorProfileId: String,
+            seniorId: String,
             systolic: Int,
             diastolic: Int,
             recordedBy: String,
             notes: String = ""
         ): HealthRecord {
             return HealthRecord(
-                seniorProfileId = seniorProfileId,
+                seniorId = seniorId,
                 type = TYPE_BLOOD_PRESSURE,
                 systolic = systolic,
                 diastolic = diastolic,
@@ -61,13 +61,13 @@ data class HealthRecord(
          * 创建心率记录
          */
         fun heartRate(
-            seniorProfileId: String,
+            seniorId: String,
             heartRate: Int,
             recordedBy: String,
             notes: String = ""
         ): HealthRecord {
             return HealthRecord(
-                seniorProfileId = seniorProfileId,
+                seniorId = seniorId,
                 type = TYPE_HEART_RATE,
                 heartRate = heartRate,
                 recordedBy = recordedBy,
@@ -79,13 +79,13 @@ data class HealthRecord(
          * 创建血糖记录
          */
         fun bloodSugar(
-            seniorProfileId: String,
+            seniorId: String,
             bloodSugar: Double,
             recordedBy: String,
             notes: String = ""
         ): HealthRecord {
             return HealthRecord(
-                seniorProfileId = seniorProfileId,
+                seniorId = seniorId,
                 type = TYPE_BLOOD_SUGAR,
                 bloodSugar = bloodSugar,
                 recordedBy = recordedBy,
@@ -125,7 +125,7 @@ data class HealthRecord(
  * 用于在 Dashboard 显示
  */
 data class HealthSummary(
-    val seniorProfileId: String = "",
+    val seniorId: String = "",
     val latestBloodPressure: HealthRecord? = null,
     val latestHeartRate: HealthRecord? = null,
     val latestBloodSugar: HealthRecord? = null,

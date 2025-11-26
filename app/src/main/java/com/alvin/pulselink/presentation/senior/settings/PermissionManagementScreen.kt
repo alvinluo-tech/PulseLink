@@ -19,7 +19,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.alvin.pulselink.domain.model.CaregiverPermissions
 
 /**
  * 权限管理页面
@@ -184,10 +183,13 @@ fun PermissionManagementScreen(
         EditPermissionsDialog(
             caregiver = caregiver,
             onDismiss = { showEditPermissionsDialog = null },
-            onSave = { updatedPermissions, canApprove ->
+            onSave = { canViewHealthData, canEditHealthData, canViewReminders, canEditReminders, canApprove ->
                 viewModel.updatePermissions(
                     caregiverId = caregiver.caregiverId,
-                    permissions = updatedPermissions,
+                    canViewHealthData = canViewHealthData,
+                    canEditHealthData = canEditHealthData,
+                    canViewReminders = canViewReminders,
+                    canEditReminders = canEditReminders,
                     canApprove = canApprove
                 )
                 showEditPermissionsDialog = null
@@ -275,15 +277,19 @@ private fun CaregiverPermissionCard(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PermissionStatusItem(
                     label = "查看健康数据",
-                    enabled = caregiver.permissions.canViewHealthData
+                    enabled = caregiver.canViewHealthData
+                )
+                PermissionStatusItem(
+                    label = "编辑健康数据",
+                    enabled = caregiver.canEditHealthData
                 )
                 PermissionStatusItem(
                     label = "查看用药提醒",
-                    enabled = caregiver.permissions.canViewReminders
+                    enabled = caregiver.canViewReminders
                 )
                 PermissionStatusItem(
                     label = "编辑用药提醒",
-                    enabled = caregiver.permissions.canEditReminders
+                    enabled = caregiver.canEditReminders
                 )
                 PermissionStatusItem(
                     label = "审批绑定请求",
@@ -351,11 +357,12 @@ private fun PermissionStatusItem(
 private fun EditPermissionsDialog(
     caregiver: BoundCaregiverWithPermissions,
     onDismiss: () -> Unit,
-    onSave: (CaregiverPermissions, Boolean) -> Unit
+    onSave: (canViewHealthData: Boolean, canEditHealthData: Boolean, canViewReminders: Boolean, canEditReminders: Boolean, canApprove: Boolean) -> Unit
 ) {
-    var canViewHealthData by remember { mutableStateOf(caregiver.permissions.canViewHealthData) }
-    var canViewReminders by remember { mutableStateOf(caregiver.permissions.canViewReminders) }
-    var canEditReminders by remember { mutableStateOf(caregiver.permissions.canEditReminders) }
+    var canViewHealthData by remember { mutableStateOf(caregiver.canViewHealthData) }
+    var canEditHealthData by remember { mutableStateOf(caregiver.canEditHealthData) }
+    var canViewReminders by remember { mutableStateOf(caregiver.canViewReminders) }
+    var canEditReminders by remember { mutableStateOf(caregiver.canEditReminders) }
     var canApprove by remember { mutableStateOf(caregiver.canApprove) }
 
     AlertDialog(
@@ -375,7 +382,7 @@ private fun EditPermissionsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
-                Divider()
+                HorizontalDivider()
                 
                 // 权限开关列表
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -384,6 +391,13 @@ private fun EditPermissionsDialog(
                         description = "允许查看血压、心率等健康数据",
                         checked = canViewHealthData,
                         onCheckedChange = { canViewHealthData = it }
+                    )
+                    
+                    PermissionSwitchItem(
+                        label = "编辑健康数据",
+                        description = "允许添加或修改健康数据",
+                        checked = canEditHealthData,
+                        onCheckedChange = { canEditHealthData = it }
                     )
                     
                     PermissionSwitchItem(
@@ -400,7 +414,7 @@ private fun EditPermissionsDialog(
                         onCheckedChange = { canEditReminders = it }
                     )
                     
-                    Divider()
+                    HorizontalDivider()
                     
                     // 审批权限（高亮显示）
                     Surface(
@@ -421,15 +435,7 @@ private fun EditPermissionsDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    onSave(
-                        CaregiverPermissions(
-                            canViewHealthData = canViewHealthData,
-                            canViewReminders = canViewReminders,
-                            canEditReminders = canEditReminders,
-                            canApproveLinkRequests = false // 这个不在这里设置，由 canApprove 参数传递
-                        ),
-                        canApprove
-                    )
+                    onSave(canViewHealthData, canEditHealthData, canViewReminders, canEditReminders, canApprove)
                 }
             ) {
                 Text("保存")

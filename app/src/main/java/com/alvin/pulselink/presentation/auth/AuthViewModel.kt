@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.core.constants.AuthConstants
 import com.alvin.pulselink.domain.model.UserRole
-import com.alvin.pulselink.domain.repository.SeniorRepository
 import com.alvin.pulselink.data.local.LocalDataSource
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.usecase.LoginUseCase
@@ -26,7 +25,6 @@ class AuthViewModel @Inject constructor(
     private val loginUseCase: LoginUseCase,
     private val registerUseCase: RegisterUseCase,
     private val authRepository: AuthRepository,
-    private val seniorRepository: SeniorRepository,
     private val localDataSource: LocalDataSource
 ) : ViewModel() {
     
@@ -388,57 +386,6 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 老人端登录：通过虚拟ID验证（已弃用，保留用于兼容）
-     */
-    @Deprecated("Use loginSenior() with email/password instead")
-    fun loginSeniorById() {
-        viewModelScope.launch {
-            val id = _uiState.value.virtualId
-
-            // 输入校验
-            if (id.isBlank()) {
-                _uiState.update { it.copy(virtualIdError = "请输入虚拟ID") }
-                return@launch
-            }
-            if (!id.matches(AuthConstants.SNR_ID_REGEX)) {
-                _uiState.update { it.copy(virtualIdError = "ID格式不正确，应为 SNR-XXXXXXXXXXXX") }
-                return@launch
-            }
-
-            _uiState.update { it.copy(isLoading = true, error = null) }
-
-            // 查询老人账户是否存在
-            seniorRepository.getSeniorById(id)
-                .onSuccess { senior ->
-                    // 保存本地会话（仅用于应用内导航与状态）
-                    localDataSource.saveUser(
-                        id = senior.id,
-                        username = senior.name,
-                        role = "senior"
-                    )
-
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            isSuccess = true,
-                            error = null,
-                            virtualIdError = null
-                        )
-                    }
-                }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            isSuccess = false,
-                            error = error.message ?: "未找到该老人ID，请检查后重试"
-                        )
-                    }
-                }
-        }
-    }
-    
     // ===== 注册逻辑 =====
     
     /**
