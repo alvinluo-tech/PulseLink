@@ -7,12 +7,14 @@ import com.alvin.pulselink.data.repository.CaregiverRelationRepositoryImpl
 import com.alvin.pulselink.data.repository.ChatRepositoryImpl
 import com.alvin.pulselink.data.repository.HealthRecordRepositoryImpl
 import com.alvin.pulselink.data.repository.HealthRepositoryImpl
+import com.alvin.pulselink.data.repository.MedicationReminderRepositoryImpl
 import com.alvin.pulselink.data.repository.SeniorProfileRepositoryImpl
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.repository.CaregiverRelationRepository
 import com.alvin.pulselink.domain.repository.ChatRepository
 import com.alvin.pulselink.domain.repository.HealthRecordRepository
 import com.alvin.pulselink.domain.repository.HealthRepository
+import com.alvin.pulselink.domain.repository.MedicationReminderRepository
 import com.alvin.pulselink.domain.repository.SeniorProfileRepository
 import com.alvin.pulselink.domain.usecase.LoginUseCase
 import com.alvin.pulselink.domain.usecase.RegisterUseCase
@@ -149,6 +151,17 @@ object AppModule {
         firestore: FirebaseFirestore
     ): HealthRecordRepository {
         return HealthRecordRepositoryImpl(firestore)
+    }
+    
+    /**
+     * 提供 MedicationReminderRepository 实现
+     */
+    @Provides
+    @Singleton
+    fun provideMedicationReminderRepository(
+        firestore: FirebaseFirestore
+    ): MedicationReminderRepository {
+        return MedicationReminderRepositoryImpl(firestore)
     }
     
     @Provides

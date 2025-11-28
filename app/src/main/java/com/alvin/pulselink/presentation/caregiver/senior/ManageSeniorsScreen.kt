@@ -26,6 +26,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alvin.pulselink.domain.usecase.profile.ManagedSeniorInfo
 import com.alvin.pulselink.presentation.common.components.SeniorIdQRDialog
+import com.alvin.pulselink.presentation.common.components.PulseLinkScaffold
 import com.alvin.pulselink.util.QRCodeGenerator
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -43,24 +44,6 @@ fun ManageSeniorsScreen(
     onEditSenior: (String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
-    
-    // Handle one-time UI events (success snackbar)
-    LaunchedEffect(Unit) {
-        viewModel.uiEvent.collect { event ->
-            when (event) {
-                is ManageSeniorsViewModel.UiEvent.ShowSnackbar -> {
-                    scope.launch {
-                        snackbarHostState.showSnackbar(
-                            message = event.message,
-                            duration = SnackbarDuration.Short
-                        )
-                    }
-                }
-            }
-        }
-    }
     
     // Error dialog state (StateFlow)
     val errorDialogState by viewModel.errorDialog.collectAsStateWithLifecycle()
@@ -106,7 +89,8 @@ fun ManageSeniorsScreen(
         )
     }
 
-    Scaffold(
+    PulseLinkScaffold(
+        uiEventFlow = viewModel.uiEvent,
         topBar = {
             TopAppBar(
                 title = {
@@ -132,9 +116,6 @@ fun ManageSeniorsScreen(
                     navigationIconContentColor = Color(0xFF8B5CF6)
                 )
             )
-        },
-        snackbarHost = {
-            SnackbarHost(hostState = snackbarHostState)
         }
     ) { paddingValues ->
         Box(

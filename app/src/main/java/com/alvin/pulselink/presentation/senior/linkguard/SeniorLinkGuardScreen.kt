@@ -21,7 +21,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alvin.pulselink.domain.model.CaregiverRelation
+import com.alvin.pulselink.presentation.common.components.PulseLinkScaffold
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -39,26 +41,10 @@ fun SeniorLinkGuardScreen(
     onBackClick: () -> Unit,
     viewModel: SeniorLinkGuardViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
-    
-    // Handle success snackbar (Channel - one-time event)
-    LaunchedEffect(Unit) {
-        viewModel.uiEvent.collect { event ->
-            when (event) {
-                is SeniorLinkGuardViewModel.UiEvent.ShowSuccessSnackbar -> {
-                    snackbarHostState.showSnackbar(
-                        message = event.message,
-                        duration = SnackbarDuration.Long  // 老人端使用长时间显示
-                    )
-                }
-            }
-        }
-    }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     
     // Error dialog state (StateFlow - must be confirmed)
-    val errorDialogState by viewModel.errorDialog.collectAsState()
+    val errorDialogState by viewModel.errorDialog.collectAsStateWithLifecycle()
     
     // Show error dialog for seniors (clear, must confirm)
     errorDialogState?.let { errorState ->
@@ -111,7 +97,8 @@ fun SeniorLinkGuardScreen(
         )
     }
 
-    Scaffold(
+    PulseLinkScaffold(
+        uiEventFlow = viewModel.uiEvent,
         topBar = {
             TopAppBar(
                 title = { 
@@ -143,26 +130,6 @@ fun SeniorLinkGuardScreen(
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White
                 )
-            )
-        },
-        snackbarHost = {
-            SnackbarHost(
-                hostState = snackbarHostState,
-                snackbar = { data ->
-                    // 老人端自定义 Snackbar：大字体、长时间显示
-                    Snackbar(
-                        modifier = Modifier.padding(16.dp),
-                        containerColor = Color(0xFF10B981),
-                        contentColor = Color.White,
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Text(
-                            text = data.visuals.message,
-                            fontSize = 18.sp,  // 老人端字体更大
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
             )
         }
     ) { padding ->

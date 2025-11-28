@@ -30,6 +30,7 @@ import com.alvin.pulselink.presentation.caregiver.senior.CreateSeniorScreen
 import com.alvin.pulselink.presentation.caregiver.senior.LinkSeniorScreen
 import com.alvin.pulselink.presentation.caregiver.senior.LinkHistoryScreen
 import com.alvin.pulselink.presentation.caregiver.linkguard.FamilyRequestsScreen
+import com.alvin.pulselink.presentation.caregiver.seniordetail.SeniorDetailScreen
 import com.alvin.pulselink.presentation.senior.home.HomeScreen
 import com.alvin.pulselink.presentation.senior.health.HealthReportScreen
 import com.alvin.pulselink.presentation.senior.history.HealthHistoryScreen
@@ -236,7 +237,13 @@ fun AppNavigation(
                 onNavigateToProfile = {
                     navController.navigate(Screen.CaregiverProfile.route)
                 },
-                onLovedOneClick = { /* TODO: Navigate to specific loved one detail */ }
+                onLovedOneClick = { seniorId ->
+                    // 导航到老人详情页
+                    val viewModelState = viewModel.uiState.value
+                    val lovedOne = viewModelState.lovedOnes.find { it.id == seniorId }
+                    val seniorName = lovedOne?.name ?: "Senior"
+                    navController.navigate(Screen.SeniorDetail.createRoute(seniorId, seniorName))
+                }
             )
         }
         
@@ -328,7 +335,13 @@ fun AppNavigation(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToHome = { navController.navigate(Screen.CaregiverHome.route) },
                 onNavigateToProfile = { navController.navigate(Screen.CaregiverProfile.route) },
-                onLovedOneClick = { /* TODO: Navigate to specific loved one detail */ }
+                onLovedOneClick = { seniorId ->
+                    // 导航到老人详情页
+                    val viewModelState = viewModel.uiState.value
+                    val lovedOne = viewModelState.lovedOnes.find { it.id == seniorId }
+                    val seniorName = lovedOne?.name ?: "Senior"
+                    navController.navigate(Screen.SeniorDetail.createRoute(seniorId, seniorName))
+                }
             )
         }
         
@@ -397,6 +410,49 @@ fun AppNavigation(
         
         composable(route = Screen.FamilyRequests.route) {
             FamilyRequestsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        
+        // ===== 老人详情页 =====
+        composable(
+            route = Screen.SeniorDetail.route,
+            arguments = listOf(
+                navArgument("seniorId") { type = NavType.StringType },
+                navArgument("seniorName") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val seniorId = backStackEntry.arguments?.getString("seniorId") ?: ""
+            val seniorName = backStackEntry.arguments?.getString("seniorName") ?: ""
+            
+            SeniorDetailScreen(
+                seniorId = seniorId,
+                seniorName = seniorName,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToAddEditMedication = { reminderId ->
+                    navController.navigate(Screen.AddEditMedication.createRoute(seniorId, reminderId))
+                }
+            )
+        }
+        
+        // ===== 用药提醒相关 =====
+        composable(
+            route = Screen.AddEditMedication.route,
+            arguments = listOf(
+                navArgument("seniorId") { type = NavType.StringType },
+                navArgument("reminderId") { 
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
+            val seniorId = backStackEntry.arguments?.getString("seniorId") ?: ""
+            val reminderId = backStackEntry.arguments?.getString("reminderId")
+            
+            com.alvin.pulselink.presentation.caregiver.seniordetail.screens.AddEditMedicationScreen(
+                seniorId = seniorId,
+                reminderId = reminderId,
                 onNavigateBack = { navController.popBackStack() }
             )
         }

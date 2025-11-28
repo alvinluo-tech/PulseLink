@@ -325,6 +325,13 @@ fun ReminderItemCard(reminder: ReminderItem) {
             statusText = "Missed",
             icon = Icons.Default.Close
         )
+        ReminderStatus.SKIPPED -> ReminderCardColors(
+            background = Color(0xFFFFF3E0),
+            border = Color(0xFFFF9800),
+            statusColor = Color(0xFFFF9800),
+            statusText = "Skipped",
+            icon = Icons.Default.Remove
+        )
     }
     
     Surface(

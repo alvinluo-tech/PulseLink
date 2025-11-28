@@ -204,9 +204,111 @@ service cloud.firestore {
     
     // ========== 其他集合 ==========
     
-    // 提醒数据
-    match /reminders/{userId}/{document=**} {
-      allow read, write: if isOwner(userId);
+    // 用药提醒（顶级集合）
+    match /reminders/{reminderId} {
+      function isSeniorUser(seniorId) {
+        return isAuthenticated() 
+            && exists(/databases/$(database)/documents/senior_profiles/$(seniorId))
+            && get(/databases/$(database)/documents/senior_profiles/$(seniorId)).data.userId == request.auth.uid;
+      }
+      
+      function isProfileCreator(seniorId) {
+        return isAuthenticated()
+            && exists(/databases/$(database)/documents/senior_profiles/$(seniorId))
+            && get(/databases/$(database)/documents/senior_profiles/$(seniorId)).data.creatorId == request.auth.uid;
+      }
+      
+      function canViewReminders(seniorId) {
+        let relationId = request.auth.uid + '_' + seniorId;
+        return isAuthenticated()
+            && exists(/databases/$(database)/documents/caregiver_relations/$(relationId))
+            && get(/databases/$(database)/documents/caregiver_relations/$(relationId)).data.status == 'active'
+            && get(/databases/$(database)/documents/caregiver_relations/$(relationId)).data.canViewReminders == true;
+      }
+      
+      function canEditReminders(seniorId) {
+        let relationId = request.auth.uid + '_' + seniorId;
+        return isAuthenticated()
+            && exists(/databases/$(database)/documents/caregiver_relations/$(relationId))
+            && get(/databases/$(database)/documents/caregiver_relations/$(relationId)).data.status == 'active'
+            && get(/databases/$(database)/documents/caregiver_relations/$(relationId)).data.canEditReminders == true;
+      }
+      
+      // 创建：必须有编辑提醒权限，且 createdBy 必须是自己
+      allow create: if isAuthenticated() 
+                    && request.resource.data.createdBy == request.auth.uid
+                    && canEditReminders(request.resource.data.seniorId);
+      
+      // 读取：老人本人或有查看提醒权限的护理者
+      allow read: if isAuthenticated() && (
+        resource == null  // 允许查询操作
+        || isSeniorUser(resource.data.seniorId)  // 老人本人
+        || canViewReminders(resource.data.seniorId)  // 有查看提醒权限的护理者
+      );
+      
+      // 更新：只能更新自己创建的且有编辑权限
+      allow update: if isAuthenticated() && resource != null
+                    && resource.data.createdBy == request.auth.uid
+                    && canEditReminders(resource.data.seniorId);
+      
+      // 删除：只能删除自己创建的且有编辑权限
+      allow delete: if isAuthenticated() && resource != null
+                    && resource.data.createdBy == request.auth.uid
+                    && canEditReminders(resource.data.seniorId);
+    }
+    
+    // 用药记录
+    match /medication_logs/{logId} {
+      function isSeniorUser(seniorId) {
+        return isAuthenticated() 
+            && exists(/databases/$(database)/documents/senior_profiles/$(seniorId))
+            && get(/databases/$(database)/documents/senior_profiles/$(seniorId)).data.userId == request.auth.uid;
+      }
+      
+      function isProfileCreator(seniorId) {
+        return isAuthenticated()
+            && exists(/databases/$(database)/documents/senior_profiles/$(seniorId))
+            && get(/databases/$(database)/documents/senior_profiles/$(seniorId)).data.creatorId == request.auth.uid;
+      }
+      
+      function canViewReminders(seniorId) {
+        let relationId = request.auth.uid + '_' + seniorId;
+        return isAuthenticated()
+            && exists(/databases/$(database)/documents/caregiver_relations/$(relationId))
+            && get(/databases/$(database)/documents/caregiver_relations/$(relationId)).data.status == 'active'
+            && get(/databases/$(database)/documents/caregiver_relations/$(relationId)).data.canViewReminders == true;
+      }
+      
+      function canEditReminders(seniorId) {
+        let relationId = request.auth.uid + '_' + seniorId;
+        return isAuthenticated()
+            && exists(/databases/$(database)/documents/caregiver_relations/$(relationId))
+            && get(/databases/$(database)/documents/caregiver_relations/$(relationId)).data.status == 'active'
+            && get(/databases/$(database)/documents/caregiver_relations/$(relationId)).data.canEditReminders == true;
+      }
+      
+      // 创建：老人本人或有编辑提醒权限的护理者
+      allow create: if isAuthenticated() && (
+        isSeniorUser(request.resource.data.seniorId)
+        || canEditReminders(request.resource.data.seniorId)
+      );
+      
+      // 读取：老人本人或有查看提醒权限的护理者
+      allow read: if isAuthenticated() && (
+        resource == null
+        || isSeniorUser(resource.data.seniorId)
+        || canViewReminders(resource.data.seniorId)
+      );
+      
+      // 更新：老人本人（标记已服用）或有编辑提醒权限的护理者
+      allow update: if isAuthenticated() && resource != null && (
+        isSeniorUser(resource.data.seniorId)
+        || canEditReminders(resource.data.seniorId)
+      );
+      
+      // 删除：必须有编辑提醒权限（通常由护理者管理）
+      allow delete: if isAuthenticated() && resource != null
+                    && canEditReminders(resource.data.seniorId);
     }
     
     // 聊天记录

@@ -78,52 +78,74 @@ class HomeViewModel @Inject constructor(
     
     private fun loadNextReminder() {
         viewModelScope.launch {
-            // 使用共享的 UseCase 获取提醒数据
-            val reminders = getRemindersUseCase()
+            // 获取 seniorId
+            val local = localDataSource.getUser()
+            val seniorId = local?.first ?: ""
             
-            // 找到下一个临近的 PENDING 提醒
-            val nextReminderTime = getNextReminderFromList(reminders)
-            _uiState.update {
-                it.copy(nextReminderTime = nextReminderTime)
+            if (seniorId.isNotEmpty()) {
+                // 使用共享的 UseCase 获取提醒数据
+                getRemindersUseCase(seniorId).collect { reminders ->
+                    // 找到下一个临近的 PENDING 提醒
+                    val nextReminderTime = getNextReminderFromList(reminders)
+                    _uiState.update {
+                        it.copy(nextReminderTime = nextReminderTime)
+                    }
+                }
             }
         }
     }
     
     private fun getNextReminderFromList(reminders: List<com.alvin.pulselink.presentation.senior.reminder.ReminderItem>): String {
-        val calendar = Calendar.getInstance()
-        val currentHour = calendar.get(Calendar.HOUR_OF_DAY)
-        val currentMinute = calendar.get(Calendar.MINUTE)
-        val currentTimeInMinutes = currentHour * 60 + currentMinute
+        val pendingReminders = reminders.filter { it.status == ReminderStatus.PENDING }
         
-        // 找到第一个 PENDING 状态且时间未到的提醒
-        val nextReminder = reminders.firstOrNull { reminder ->
-            if (reminder.status != ReminderStatus.PENDING) return@firstOrNull false
-            
-            // 解析时间字符串 "02:00 PM" -> 14:00
-            val reminderTimeInMinutes = parseTimeToMinutes(reminder.time)
-            reminderTimeInMinutes > currentTimeInMinutes
+        if (pendingReminders.isEmpty()) {
+            return "No reminders"
         }
         
-        return nextReminder?.time ?: "No reminders"
+        // 如果只有一个提醒，直接显示时间
+        if (pendingReminders.size == 1) {
+            return pendingReminders.first().time
+        }
+        
+        // 如果有多个提醒，检查是否在 30 分钟窗口内
+        val firstTime = parseTimeToMinutes(pendingReminders.first().time)
+        var medicationCount = 1
+        
+        for (i in 1 until pendingReminders.size) {
+            val currentTime = parseTimeToMinutes(pendingReminders[i].time)
+            if (currentTime - firstTime <= 30) {
+                medicationCount++
+            } else {
+                break
+            }
+        }
+        
+        // 如果有多个药物在同一时段，显示批量信息
+        return if (medicationCount > 1) {
+            "${pendingReminders.first().time} (+$medicationCount meds)"
+        } else {
+            pendingReminders.first().time
+        }
     }
     
     private fun parseTimeToMinutes(timeStr: String): Int {
-        // 解析 "08:00 AM" 或 "02:00 PM" 格式
+        // 支持 "08:00 AM", "02:00 PM", "08:00" 格式
         val parts = timeStr.split(" ")
-        if (parts.size != 2) return 0
-        
         val timeParts = parts[0].split(":")
+        
         if (timeParts.size != 2) return 0
         
         var hour = timeParts[0].toIntOrNull() ?: 0
         val minute = timeParts[1].toIntOrNull() ?: 0
-        val isPM = parts[1].uppercase() == "PM"
         
-        // 转换为 24 小时制
-        if (isPM && hour != 12) {
-            hour += 12
-        } else if (!isPM && hour == 12) {
-            hour = 0
+        // 如果有 AM/PM 标记，转换为 24 小时制
+        if (parts.size == 2) {
+            val isPM = parts[1].uppercase() == "PM"
+            if (isPM && hour != 12) {
+                hour += 12
+            } else if (!isPM && hour == 12) {
+                hour = 0
+            }
         }
         
         return hour * 60 + minute

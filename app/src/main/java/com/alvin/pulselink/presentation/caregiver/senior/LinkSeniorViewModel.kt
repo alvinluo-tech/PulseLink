@@ -1,14 +1,15 @@
 package com.alvin.pulselink.presentation.caregiver.senior
 
 import android.util.Log
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.core.constants.AuthConstants
+import com.alvin.pulselink.presentation.common.base.BaseViewModel
 import com.alvin.pulselink.domain.model.CaregiverRelation
 import com.alvin.pulselink.domain.model.SeniorProfile
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.repository.CaregiverRelationRepository
 import com.alvin.pulselink.domain.repository.SeniorProfileRepository
+import com.alvin.pulselink.presentation.common.state.ErrorDialogState
 import com.alvin.pulselink.util.RelationshipHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
@@ -28,14 +29,10 @@ class LinkSeniorViewModel @Inject constructor(
     private val seniorProfileRepository: SeniorProfileRepository,
     private val caregiverRelationRepository: CaregiverRelationRepository,
     private val authRepository: AuthRepository
-) : ViewModel() {
+) : BaseViewModel() {
 
     private val _uiState = MutableStateFlow(LinkSeniorUiState())
     val uiState: StateFlow<LinkSeniorUiState> = _uiState.asStateFlow()
-    
-    // Channel for one-time events (success Snackbar)
-    private val _uiEvent = Channel<UiEvent>()
-    val uiEvent = _uiEvent.receiveAsFlow()
     
     // StateFlow for error dialogs (persists across config changes)
     private val _errorDialog = MutableStateFlow<ErrorDialogState?>(null)
@@ -307,8 +304,8 @@ class LinkSeniorViewModel @Inject constructor(
                         isSuccess = true
                     ) }
                     
-                    // Send success Snackbar via Channel
-                    _uiEvent.send(UiEvent.ShowSnackbar("Link request sent successfully! Waiting for senior approval."))
+                    // Send success Snackbar (使用新的BaseViewModel方法)
+                    showSuccess("Link request sent successfully! Waiting for senior approval.")
                 }
                 .onFailure { error ->
                     Log.e("LinkSeniorVM", "Failed to create link request: ${error.message}", error)
@@ -369,18 +366,3 @@ class LinkSeniorViewModel @Inject constructor(
         _errorDialog.value = null
     }
 }
-
-/**
- * UI Events (one-time events via Channel)
- */
-sealed class UiEvent {
-    data class ShowSnackbar(val message: String) : UiEvent()
-}
-
-/**
- * Error Dialog State (persisted via StateFlow)
- */
-data class ErrorDialogState(
-    val title: String,
-    val message: String
-)

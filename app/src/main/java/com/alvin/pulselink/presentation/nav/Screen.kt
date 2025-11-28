@@ -98,6 +98,22 @@ sealed class Screen(val route: String) {
     /** 家庭成员链接请求审批（Link Guard） */
     object FamilyRequests : Screen("caregiver/family_requests")
     
+    /** 老人详情页 - 查看老人健康数据 */
+    object SeniorDetail : Screen("caregiver/senior_detail/{seniorId}/{seniorName}") {
+        fun createRoute(seniorId: String, seniorName: String) = "caregiver/senior_detail/$seniorId/$seniorName"
+    }
+    
+    /** 添加/编辑用药提醒 */
+    object AddEditMedication : Screen("caregiver/add_edit_medication/{seniorId}?reminderId={reminderId}") {
+        fun createRoute(seniorId: String, reminderId: String? = null): String {
+            return if (reminderId != null) {
+                "caregiver/add_edit_medication/$seniorId?reminderId=$reminderId"
+            } else {
+                "caregiver/add_edit_medication/$seniorId"
+            }
+        }
+    }
+    
     // ===== 测试页面 (开发用) =====
     object FirebaseTest : Screen("test/firebase")
 }

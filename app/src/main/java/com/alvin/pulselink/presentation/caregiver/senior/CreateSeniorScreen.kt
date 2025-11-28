@@ -35,6 +35,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alvin.pulselink.domain.model.SeniorProfile
 import com.alvin.pulselink.domain.usecase.profile.ManagedSeniorInfo
+import com.alvin.pulselink.presentation.common.components.PulseLinkScaffold
 import com.alvin.pulselink.util.AvatarHelper
 import com.alvin.pulselink.util.QRCodeGenerator
 import kotlinx.coroutines.launch
@@ -53,7 +54,6 @@ fun CreateSeniorScreen(
     val createState by viewModel.createFormState.collectAsStateWithLifecycle()
     val manageState by viewModel.uiState.collectAsStateWithLifecycle()
     val errorDialogState by viewModel.errorDialog.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
     var showCreateForm by remember { mutableStateOf(false) }
 
     // Get created seniors (using createdSeniors from uiState)
@@ -73,18 +73,8 @@ fun CreateSeniorScreen(
         }
     }
     
-    // Collect UiEvent from Channel (success Snackbar)
-    LaunchedEffect(Unit) {
-        viewModel.uiEvent.collect { event ->
-            when (event) {
-                is ManageSeniorsViewModel.UiEvent.ShowSnackbar -> {
-                    snackbarHostState.showSnackbar(event.message)
-                }
-            }
-        }
-    }
-    
-    Scaffold(
+    PulseLinkScaffold(
+        uiEventFlow = viewModel.uiEvent,
         topBar = {
             TopAppBar(
                 title = { Text("Create Senior Account", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF111827)) },
@@ -111,7 +101,6 @@ fun CreateSeniorScreen(
                 )
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             if (createdSeniors.isNotEmpty() && !showCreateForm) {
                 FloatingActionButton(

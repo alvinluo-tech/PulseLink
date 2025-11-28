@@ -1,17 +1,16 @@
 package com.alvin.pulselink.presentation.senior.linkguard
 
 import android.util.Log
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.domain.model.CaregiverRelation
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.repository.CaregiverRelationRepository
+import com.alvin.pulselink.presentation.common.base.BaseViewModel
+import com.alvin.pulselink.presentation.common.state.ErrorDialogState
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,37 +27,16 @@ import javax.inject.Inject
 class SeniorLinkGuardViewModel @Inject constructor(
     private val caregiverRelationRepository: CaregiverRelationRepository,
     private val authRepository: AuthRepository
-) : ViewModel() {
+) : BaseViewModel() {
 
     private val _uiState = MutableStateFlow(SeniorLinkGuardUiState())
     val uiState: StateFlow<SeniorLinkGuardUiState> = _uiState.asStateFlow()
-    
-    // Channel for one-time UI events (success snackbar)
-    private val _uiEvent = Channel<UiEvent>()
-    val uiEvent = _uiEvent.receiveAsFlow()
     
     // StateFlow for error dialog (must be confirmed by user)
     private val _errorDialog = MutableStateFlow<ErrorDialogState?>(null)
     val errorDialog: StateFlow<ErrorDialogState?> = _errorDialog.asStateFlow()
 
     private val TAG = "SeniorLinkGuardVM"
-    
-    /**
-     * UI事件（一次性消息：成功提示）
-     * 老人端：Snackbar 大字体、长显示时间
-     */
-    sealed class UiEvent {
-        data class ShowSuccessSnackbar(val message: String) : UiEvent()
-    }
-    
-    /**
-     * 错误对话框状态（必须用户确认）
-     * 老人端：用 AlertDialog 确保老人看清楚错误信息
-     */
-    data class ErrorDialogState(
-        val title: String,
-        val message: String
-    )
     
     fun dismissErrorDialog() {
         _errorDialog.value = null
@@ -200,7 +178,7 @@ class SeniorLinkGuardViewModel @Inject constructor(
                     .onSuccess {
                         Log.d(TAG, "Request approved successfully")
                         _uiState.update { it.copy(isProcessing = false) }
-                        _uiEvent.send(UiEvent.ShowSuccessSnackbar("Link request approved"))
+                        showHeroSuccess("Link request approved")
                         loadPendingRequests()
                         loadBoundCaregivers()
                     }
@@ -262,7 +240,7 @@ class SeniorLinkGuardViewModel @Inject constructor(
                 ).onSuccess {
                     Log.d(TAG, "Permissions updated successfully")
                     _uiState.update { it.copy(isProcessing = false) }
-                    _uiEvent.send(UiEvent.ShowSuccessSnackbar("Permissions updated"))
+                    showHeroSuccess("Permissions updated")
                     loadBoundCaregivers()
                 }.onFailure { error ->
                     Log.e(TAG, "Failed to update permissions", error)
@@ -306,7 +284,7 @@ class SeniorLinkGuardViewModel @Inject constructor(
                     .onSuccess {
                         Log.d(TAG, "Request rejected successfully")
                         _uiState.update { it.copy(isProcessing = false) }
-                        _uiEvent.send(UiEvent.ShowSuccessSnackbar("Link request rejected"))
+                        showHeroSuccess("Link request rejected")
                         loadPendingRequests()
                         loadBoundCaregivers()
                     }

@@ -1,6 +1,5 @@
 package com.alvin.pulselink.presentation.senior.health
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -19,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -28,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alvin.pulselink.presentation.common.components.SeniorBottomNavigationBar
+import com.alvin.pulselink.presentation.common.components.PulseLinkScaffold
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,25 +39,16 @@ fun HealthReportScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedItem by remember { mutableStateOf(0) }
-    val context = LocalContext.current
     
-    // Handle success
+    // Reset saved state after showing Hero overlay
     LaunchedEffect(uiState.isSaved) {
         if (uiState.isSaved) {
-            Toast.makeText(context, "健康数据已保存!", Toast.LENGTH_SHORT).show()
             viewModel.resetSavedState()
         }
     }
     
-    // Show error toast
-    LaunchedEffect(uiState.error) {
-        uiState.error?.let { error ->
-            Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
-            viewModel.clearError()
-        }
-    }
-    
-    Scaffold(
+    PulseLinkScaffold(
+        uiEventFlow = viewModel.uiEvent,
         topBar = {
             TopAppBar(
                 title = {

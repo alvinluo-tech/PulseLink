@@ -1,8 +1,8 @@
 package com.alvin.pulselink.presentation.senior.health
 
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.domain.usecase.SaveHealthDataUseCase
+import com.alvin.pulselink.presentation.common.base.BaseViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,7 +14,7 @@ import javax.inject.Inject
 @HiltViewModel
 class HealthReportViewModel @Inject constructor(
     private val saveHealthDataUseCase: SaveHealthDataUseCase
-) : ViewModel() {
+) : BaseViewModel() {
     
     private val _uiState = MutableStateFlow(HealthReportUiState())
     val uiState: StateFlow<HealthReportUiState> = _uiState.asStateFlow()
@@ -48,12 +48,8 @@ class HealthReportViewModel @Inject constructor(
                 val heartRate = _uiState.value.heartRate.toIntOrNull()
                 
                 if (systolic == null || diastolic == null || heartRate == null) {
-                    _uiState.update { 
-                        it.copy(
-                            isLoading = false,
-                            error = "请填写所有字段"
-                        )
-                    }
+                    _uiState.update { it.copy(isLoading = false) }
+                    showError("Please fill in all fields")
                     return@launch
                 }
                 
@@ -76,23 +72,17 @@ class HealthReportViewModel @Inject constructor(
                                 heartRate = ""
                             )
                         }
+                        // Show Hero-style success feedback for seniors
+                        showHeroSuccess("Health data saved successfully!")
                     },
                     onFailure = { exception ->
-                        _uiState.update { 
-                            it.copy(
-                                isLoading = false,
-                                error = exception.message ?: "保存健康数据失败"
-                            )
-                        }
+                        _uiState.update { it.copy(isLoading = false) }
+                        showError(exception.message ?: "Failed to save health data")
                     }
                 )
             } catch (e: Exception) {
-                _uiState.update { 
-                    it.copy(
-                        isLoading = false,
-                        error = e.message ?: "保存健康数据失败"
-                    )
-                }
+                _uiState.update { it.copy(isLoading = false) }
+                showError(e.message ?: "Failed to save health data")
             }
         }
     }

@@ -255,3 +255,7 @@ app/release/
 
 # Refactoring reports (temporary)
 REFACTORING_REPORT.txt
+
+# Images folder
+img/
+imgs/

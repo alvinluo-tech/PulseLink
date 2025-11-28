@@ -31,6 +31,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alvin.pulselink.domain.model.SeniorProfile
 import com.alvin.pulselink.presentation.common.components.QRCodeScannerDialog
+import com.alvin.pulselink.presentation.common.components.PulseLinkScaffold
 import com.alvin.pulselink.util.AvatarHelper
 import com.alvin.pulselink.util.RelationshipHelper
 import kotlinx.coroutines.launch
@@ -50,7 +51,6 @@ fun LinkSeniorScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val errorDialogState by viewModel.errorDialogState.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
     var showLinkForm by remember { mutableStateOf(false) }
     
     // Load linked seniors
@@ -67,18 +67,8 @@ fun LinkSeniorScreen(
         }
     }
     
-    // Collect UiEvent from Channel (success Snackbar)
-    LaunchedEffect(Unit) {
-        viewModel.uiEvent.collect { event ->
-            when (event) {
-                is com.alvin.pulselink.presentation.caregiver.senior.UiEvent.ShowSnackbar -> {
-                    snackbarHostState.showSnackbar(event.message)
-                }
-            }
-        }
-    }
-    
-    Scaffold(
+    PulseLinkScaffold(
+        uiEventFlow = viewModel.uiEvent,
         topBar = {
             TopAppBar(
                 title = { Text("Link Senior Account", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF111827)) },
@@ -115,7 +105,6 @@ fun LinkSeniorScreen(
                 )
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             if (uiState.linkedSeniors.isNotEmpty() && !showLinkForm) {
                 FloatingActionButton(

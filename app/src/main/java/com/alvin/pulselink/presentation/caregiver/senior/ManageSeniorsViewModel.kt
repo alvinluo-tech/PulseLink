@@ -2,12 +2,11 @@ package com.alvin.pulselink.presentation.caregiver.senior
 
 import android.graphics.Bitmap
 import android.util.Log
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.domain.model.CaregiverRelation
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.receiveAsFlow
 import com.alvin.pulselink.domain.model.SeniorProfile
+import com.alvin.pulselink.presentation.common.base.BaseViewModel
+import com.alvin.pulselink.presentation.common.state.ErrorDialogState
 import com.alvin.pulselink.domain.repository.AuthRepository
 import com.alvin.pulselink.domain.usecase.profile.CreateSeniorProfileUseCase
 import com.alvin.pulselink.domain.usecase.profile.DeleteSeniorProfileUseCase
@@ -46,7 +45,7 @@ class ManageSeniorsViewModel @Inject constructor(
     private val manageRelationUseCase: ManageRelationUseCase,
     private val authRepository: AuthRepository,
     private val firestore: FirebaseFirestore
-) : ViewModel() {
+) : BaseViewModel() {
 
     companion object {
         private const val TAG = "ManageSeniorsVM"
@@ -58,28 +57,9 @@ class ManageSeniorsViewModel @Inject constructor(
     private val _createFormState = MutableStateFlow(CreateSeniorFormState())
     val createFormState: StateFlow<CreateSeniorFormState> = _createFormState.asStateFlow()
     
-    // Channel for one-time UI events (success, navigation)
-    private val _uiEvent = Channel<UiEvent>()
-    val uiEvent = _uiEvent.receiveAsFlow()
-    
     // StateFlow for error dialog (must be confirmed by user)
     private val _errorDialog = MutableStateFlow<ErrorDialogState?>(null)
     val errorDialog: StateFlow<ErrorDialogState?> = _errorDialog.asStateFlow()
-    
-    /**
-     * UI事件（一次性消息：成功提示、导航等）
-     */
-    sealed class UiEvent {
-        data class ShowSnackbar(val message: String) : UiEvent()
-    }
-    
-    /**
-     * 错误对话框状态（必须用户确认）
-     */
-    data class ErrorDialogState(
-        val title: String,
-        val message: String
-    )
     
     fun dismissErrorDialog() {
         _errorDialog.value = null
@@ -263,10 +243,10 @@ class ManageSeniorsViewModel @Inject constructor(
                 // 刷新列表
                 loadSeniors()
                 
-                // 发送成功通知到Channel（Snackbar）
-                _uiEvent.send(UiEvent.ShowSnackbar(
+                // 发送成功通知（使用新的BaseViewModel方法）
+                showSuccess(
                     "Senior account created successfully!\nEmail: ${result.email}\nPassword: ${result.password}"
-                ))
+                )
                 
                 onSuccess()
             }.onFailure { error ->
@@ -330,7 +310,7 @@ class ManageSeniorsViewModel @Inject constructor(
             deleteSeniorProfileUseCase(seniorProfileId, requesterId)
                 .onSuccess {
                     _uiState.update { it.copy(isLoading = false) }
-                    _uiEvent.send(UiEvent.ShowSnackbar("Successfully deleted senior account"))
+                    showSuccess("Successfully deleted senior account")
                     loadSeniors()
                 }
                 .onFailure { e ->
@@ -421,7 +401,7 @@ class ManageSeniorsViewModel @Inject constructor(
             manageRelationUseCase.removeRelation(relationId, caregiverId)
                 .onSuccess {
                     _uiState.update { it.copy(isLoading = false) }
-                    _uiEvent.send(UiEvent.ShowSnackbar("Successfully unlinked from senior account"))
+                    showSuccess("Successfully unlinked from senior account")
                     loadSeniors()
                 }
                 .onFailure { e ->
