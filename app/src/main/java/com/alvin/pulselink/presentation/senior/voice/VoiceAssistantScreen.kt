@@ -2,7 +2,6 @@ package com.alvin.pulselink.presentation.senior.voice
 
 import android.Manifest
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -48,7 +47,10 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alvin.pulselink.domain.model.ChatMessage
+import com.alvin.pulselink.presentation.common.components.PulseLinkSnackbar
 import com.alvin.pulselink.presentation.common.components.SeniorBottomNavigationBar
+import com.alvin.pulselink.presentation.common.state.SnackbarType
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,16 +62,20 @@ fun VoiceAssistantScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     
-    // 显示错误提示
+    // 显示错误提示 - 使用 PulseLinkSnackbar
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            if (error.contains("Speech recognition not available") || 
-                error.contains("Google service") ||
-                error.contains("Network error") ||
-                error.contains("Server error")) {
-                Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = error,
+                    duration = SnackbarDuration.Short
+                )
             }
+            // 自动清除错误状态
+            viewModel.clearError()
         }
     }
     
@@ -136,6 +142,14 @@ fun VoiceAssistantScreen(
                 )
             )
         },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { snackbarData ->
+                PulseLinkSnackbar(
+                    snackbarData = snackbarData,
+                    type = SnackbarType.ERROR
+                )
+            }
+        },
         bottomBar = {
             BottomBar(
                 inputText = uiState.inputText,
@@ -148,7 +162,6 @@ fun VoiceAssistantScreen(
                         viewModel.onMicPressed()
                     } else {
                         Log.d("VoiceDebug", "Requesting permission...")
-                        Toast.makeText(context, "Requesting microphone permission...", Toast.LENGTH_SHORT).show()
                         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 },

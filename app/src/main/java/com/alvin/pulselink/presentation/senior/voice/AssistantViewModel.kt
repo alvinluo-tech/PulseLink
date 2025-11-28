@@ -2,6 +2,9 @@ package com.alvin.pulselink.presentation.senior.voice
 
 import android.content.Context
 import android.media.MediaPlayer
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.util.Log
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -48,6 +51,8 @@ class AssistantViewModel @Inject constructor(
     private val audioRecorder = com.alvin.pulselink.data.speech.AudioRecorder(context)
     private val audioPlayer = com.alvin.pulselink.data.speech.AudioPlayer(context)
     private var amplitudeJob: kotlinx.coroutines.Job? = null
+    
+    private val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
     
     companion object {
         private const val TAG = "AssistantViewModel"
@@ -277,6 +282,10 @@ class AssistantViewModel @Inject constructor(
         }
     }
     
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
+    }
+    
     fun clearChatHistory() {
         viewModelScope.launch {
             try {
@@ -292,11 +301,27 @@ class AssistantViewModel @Inject constructor(
         }
     }
 
+    private var recordingStartTime = 0L
+    
     fun onMicPressed() {
         Log.d(TAG, "Starting audio recording with amplitude monitoring...")
         
+        // 触觉反馈 - 按下震动
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(50)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Haptic feedback error", e)
+        }
+        
         try {
             val file = audioRecorder.startRecording()
+            recordingStartTime = System.currentTimeMillis() // 记录开始时间
+            
             _uiState.update { 
                 it.copy(
                     isRecording = true,
@@ -331,6 +356,25 @@ class AssistantViewModel @Inject constructor(
     fun onMicReleased() {
         Log.d(TAG, "Stopping audio recording and processing...")
         
+        // 检查录音时长，避免误触
+        val recordingDuration = System.currentTimeMillis() - recordingStartTime
+        if (recordingDuration < 1200) { // 少于1.2秒认为说话太短
+            Log.d(TAG, "Recording too short (${recordingDuration}ms), canceling...")
+            amplitudeJob?.cancel()
+            amplitudeJob = null
+            audioRecorder.cancelRecording()
+            
+            _uiState.update { 
+                it.copy(
+                    isRecording = false,
+                    recordingAmplitude = 0f,
+                    recordedAudioFile = null,
+                    error = "Speaking time is too short, please hold and speak longer"
+                ) 
+            }
+            return
+        }
+        
         // 停止音量监测
         amplitudeJob?.cancel()
         amplitudeJob = null
@@ -349,40 +393,52 @@ class AssistantViewModel @Inject constructor(
             return
         }
         
-        // 处理录音：调用Repository发送语音消息
+        // 立即更新UI状态，不等待上传
+        _uiState.update { 
+            it.copy(
+                isRecording = false,
+                recordingAmplitude = 0f,
+                recordedAudioFile = null
+            ) 
+        }
+        
+        // 1. 先计算音频时长
+        val duration = getAudioDuration(audioFile)
+        Log.d(TAG, "Audio duration: ${duration}s")
+        
+        // 2. 立即在本地显示音频消息（乐观更新）
+        val tempMessage = ChatMessage(
+            id = "temp_${System.currentTimeMillis()}", // 临时ID
+            text = "",
+            fromAssistant = false,
+            type = com.alvin.pulselink.domain.model.MessageType.AUDIO,
+            audioGcsUri = null, // 暂时为空
+            audioDownloadUrl = audioFile.absolutePath, // 临时用本地路径
+            duration = duration,
+            timestamp = System.currentTimeMillis()
+        )
+        
+        // 立即显示在UI上
+        val currentMessages = _uiState.value.messages.toMutableList()
+        currentMessages.add(tempMessage)
+        _uiState.update { it.copy(messages = currentMessages) }
+        
+        Log.d(TAG, "Displayed temporary audio message, uploading in background...")
+        
+        // 3. 后台异步上传和发送
         viewModelScope.launch {
             try {
-                _uiState.update { 
-                    it.copy(
-                        isRecording = false,
-                        recordingAmplitude = 0f,
-                        sending = false // 先不显示sending,等消息发送后再显示
-                    ) 
-                }
+                // 延迟一点再显示AI thinking（让用户看到自己的消息）
+                kotlinx.coroutines.delay(300)
+                _uiState.update { it.copy(sending = true) }
                 
-                // 1. 计算音频时长
-                val duration = getAudioDuration(audioFile)
-                Log.d(TAG, "Audio duration: ${duration}s")
-                
-                // 2. 调用Repository发送语音消息
-                // Repository会负责：上传到Storage + 写入Firestore
-                // Firestore写入会自动触发Cloud Function进行AI处理
-                val result = chatRepository.sendVoiceMessage(audioFile, duration.toInt())
+                // 异步上传
+                val result = chatRepository.sendVoiceMessage(audioFile, duration)
                 
                 result.onSuccess {
-                    Log.d(TAG, "Voice message sent successfully")
-                    // 3. 删除本地临时文件
+                    Log.d(TAG, "Voice message uploaded successfully")
+                    // 删除本地临时文件
                     audioFile.delete()
-                    
-                    // 4. 延迟一点再显示AI thinking状态(让用户看到自己的消息)
-                    kotlinx.coroutines.delay(500)
-                    
-                    _uiState.update { 
-                        it.copy(
-                            recordedAudioFile = null,
-                            sending = true // 现在显示AI正在思考
-                        )
-                    }
                 }.onFailure { e ->
                     throw e
                 }
