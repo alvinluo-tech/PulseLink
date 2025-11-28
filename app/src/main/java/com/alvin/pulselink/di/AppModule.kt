@@ -23,6 +23,7 @@ import com.alvin.pulselink.domain.usecase.TestFirestoreConnectionUseCase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.functions.FirebaseFunctions
+import com.google.firebase.storage.FirebaseStorage
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -72,6 +73,15 @@ object AppModule {
         return FirebaseFunctions.getInstance()
     }
     
+    /**
+     * 提供 Firebase Storage 实例
+     */
+    @Provides
+    @Singleton
+    fun provideFirebaseStorage(): com.google.firebase.storage.FirebaseStorage {
+        return com.google.firebase.storage.FirebaseStorage.getInstance()
+    }
+    
     @Provides
     @Singleton
     fun provideLocalDataSource(
@@ -112,9 +122,10 @@ object AppModule {
     @Singleton
     fun provideChatRepository(
         firestore: FirebaseFirestore,
-        firebaseAuth: FirebaseAuth
+        firebaseAuth: FirebaseAuth,
+        storage: FirebaseStorage
     ): ChatRepository {
-        return ChatRepositoryImpl(firestore, firebaseAuth)
+        return ChatRepositoryImpl(firestore, firebaseAuth, storage)
     }
     
     // ========== Repository Providers ==========

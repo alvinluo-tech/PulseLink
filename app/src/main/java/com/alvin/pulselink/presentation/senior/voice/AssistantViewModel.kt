@@ -1,5 +1,7 @@
 package com.alvin.pulselink.presentation.senior.voice
 
+import android.content.Context
+import android.media.MediaPlayer
 import android.util.Log
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -8,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.alvin.pulselink.data.local.LocalDataSource
 import com.alvin.pulselink.data.speech.AudioRecorderManager
 import com.alvin.pulselink.domain.model.ChatMessage
+import com.alvin.pulselink.domain.model.MessageType
 import com.alvin.pulselink.domain.repository.ChatRepository
 import com.alvin.pulselink.domain.repository.SeniorProfileRepository
 import com.alvin.pulselink.domain.usecase.ChatWithAIUseCase
@@ -15,11 +18,16 @@ import com.alvin.pulselink.domain.usecase.GetHealthDataUseCase
 import com.alvin.pulselink.domain.usecase.VoiceToTextUseCase
 import com.alvin.pulselink.util.AvatarHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
@@ -30,11 +38,16 @@ class AssistantViewModel @Inject constructor(
     private val audioRecorderManager: AudioRecorderManager,
     private val voiceToTextUseCase: VoiceToTextUseCase,
     private val seniorProfileRepository: SeniorProfileRepository,
-    private val localDataSource: LocalDataSource
+    private val firebaseAuth: com.google.firebase.auth.FirebaseAuth,
+    @ApplicationContext private val context: Context
 ): ViewModel() {
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
+    
+    private val audioRecorder = com.alvin.pulselink.data.speech.AudioRecorder(context)
+    private val audioPlayer = com.alvin.pulselink.data.speech.AudioPlayer(context)
+    private var amplitudeJob: kotlinx.coroutines.Job? = null
     
     companion object {
         private const val TAG = "AssistantViewModel"
@@ -44,6 +57,7 @@ class AssistantViewModel @Inject constructor(
         loadChatHistory()
         observeRecordingState()
         loadUserAvatar()
+        observeAudioPlayback()
     }
     
     private fun observeRecordingState() {
@@ -64,6 +78,16 @@ class AssistantViewModel @Inject constructor(
         }
     }
     
+    private fun observeAudioPlayback() {
+        viewModelScope.launch {
+            audioPlayer.isPlaying.collect { isPlaying ->
+                if (!isPlaying) {
+                    _uiState.update { it.copy(playingMessageId = null) }
+                }
+            }
+        }
+    }
+    
     private fun loadChatHistory() {
         viewModelScope.launch {
             try {
@@ -79,10 +103,14 @@ class AssistantViewModel @Inject constructor(
                         )
                         chatRepository.saveMessage(welcomeMessage)
                     } else {
+                        // 检查是否有新的AI回复消息，如果有则关闭sending状态
+                        val hasNewAiMessage = messages.lastOrNull()?.fromAssistant == true
+                        
                         _uiState.update { 
                             it.copy(
                                 messages = messages,
-                                isLoadingHistory = false
+                                isLoadingHistory = false,
+                                sending = if (hasNewAiMessage) false else it.sending
                             ) 
                         }
                     }
@@ -103,8 +131,7 @@ class AssistantViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 // 获取当前用户的 senior ID
-                val cachedUser = localDataSource.getUser()
-                val seniorId = cachedUser?.first
+                val seniorId = firebaseAuth.currentUser?.uid
                 
                 if (seniorId.isNullOrBlank()) {
                     Log.w(TAG, "No senior ID found, using default avatar")
@@ -266,97 +293,192 @@ class AssistantViewModel @Inject constructor(
     }
 
     fun onMicPressed() {
-        Log.d(TAG, "onMicPressed() called - starting audio recording")
-        val started = audioRecorderManager.startRecording()
-        if (!started) {
-            _uiState.update { it.copy(error = "Failed to start recording") }
+        Log.d(TAG, "Starting audio recording with amplitude monitoring...")
+        
+        try {
+            val file = audioRecorder.startRecording()
+            _uiState.update { 
+                it.copy(
+                    isRecording = true,
+                    recordedAudioFile = file,
+                    recordingAmplitude = 0f
+                ) 
+            }
+            
+            // 启动音量监测协程
+            amplitudeJob = viewModelScope.launch {
+                while (isActive) {
+                    val maxAmp = audioRecorder.getMaxAmplitude()
+                    val normalizedAmp = (maxAmp / 32767f).coerceIn(0f, 1f)
+                    _uiState.update { it.copy(recordingAmplitude = normalizedAmp) }
+                    kotlinx.coroutines.delay(100) // 每100ms采样一次
+                }
+            }
+            
+            Log.d(TAG, "Recording started successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start recording", e)
+            _uiState.update { 
+                it.copy(
+                    isRecording = false,
+                    recordingAmplitude = 0f,
+                    error = "Failed to start recording: ${e.message}"
+                ) 
+            }
         }
     }
     
     fun onMicReleased() {
-        Log.d(TAG, "onMicReleased() called - stopping audio recording")
+        Log.d(TAG, "Stopping audio recording and processing...")
         
-        val audioFile = audioRecorderManager.stopRecording()
+        // 停止音量监测
+        amplitudeJob?.cancel()
+        amplitudeJob = null
+        
+        val audioFile = audioRecorder.stopRecording()
         if (audioFile == null) {
             Log.e(TAG, "No audio file generated")
-            _uiState.update { it.copy(error = "Recording failed") }
+            _uiState.update { 
+                it.copy(
+                    isRecording = false,
+                    recordingAmplitude = 0f,
+                    recordedAudioFile = null,
+                    error = "Recording failed"
+                ) 
+            }
             return
         }
         
-        // 转换音频为文本
+        // 处理录音：调用Repository发送语音消息
         viewModelScope.launch {
             try {
-                _uiState.update { it.copy(isLoadingTranscription = true) }
-                
-                // 读取音频文件并转换为 Base64
-                val base64Audio = audioRecorderManager.getBase64Audio(audioFile)
-                if (base64Audio == null) {
-                    _uiState.update { 
-                        it.copy(
-                            isLoadingTranscription = false,
-                            error = "Failed to read audio file"
-                        ) 
-                    }
-                    return@launch
+                _uiState.update { 
+                    it.copy(
+                        isRecording = false,
+                        recordingAmplitude = 0f,
+                        sending = false // 先不显示sending,等消息发送后再显示
+                    ) 
                 }
                 
-                Log.d(TAG, "Sending ${base64Audio.length} chars to voice-to-text service")
+                // 1. 计算音频时长
+                val duration = getAudioDuration(audioFile)
+                Log.d(TAG, "Audio duration: ${duration}s")
                 
-                // 调用 Cloud Function 转换为文本
-                val result = voiceToTextUseCase(base64Audio)
+                // 2. 调用Repository发送语音消息
+                // Repository会负责：上传到Storage + 写入Firestore
+                // Firestore写入会自动触发Cloud Function进行AI处理
+                val result = chatRepository.sendVoiceMessage(audioFile, duration.toInt())
                 
-                result.onSuccess { text ->
-                    Log.d(TAG, "Transcription successful: $text")
-                    
-                    // 删除临时文件
+                result.onSuccess {
+                    Log.d(TAG, "Voice message sent successfully")
+                    // 3. 删除本地临时文件
                     audioFile.delete()
                     
-                    if (text.isNotBlank()) {
-                        // 将识别的文本填入输入框，并将光标设置在末尾
-                        _uiState.update { 
-                            it.copy(
-                                inputText = TextFieldValue(
-                                    text = text,
-                                    selection = TextRange(text.length) // 光标在末尾
-                                ),
-                                isLoadingTranscription = false,
-                                error = null
-                            ) 
-                        }
-                    } else {
-                        _uiState.update { 
-                            it.copy(
-                                isLoadingTranscription = false,
-                                error = "No speech detected"
-                            ) 
-                        }
-                    }
-                }.onFailure { e ->
-                    Log.e(TAG, "Transcription failed", e)
-                    audioFile.delete()
+                    // 4. 延迟一点再显示AI thinking状态(让用户看到自己的消息)
+                    kotlinx.coroutines.delay(500)
+                    
                     _uiState.update { 
                         it.copy(
-                            isLoadingTranscription = false,
-                            error = "Voice recognition failed: ${e.message}"
-                        ) 
+                            recordedAudioFile = null,
+                            sending = true // 现在显示AI正在思考
+                        )
                     }
+                }.onFailure { e ->
+                    throw e
                 }
                 
             } catch (e: Exception) {
-                Log.e(TAG, "Error processing audio", e)
+                Log.e(TAG, "Error processing audio message", e)
                 audioFile?.delete()
+                
+                val errorMsg = ChatMessage(
+                    text = "❌ Failed to process audio: ${e.message}",
+                    fromAssistant = true,
+                    type = com.alvin.pulselink.domain.model.MessageType.TEXT,
+                    timestamp = System.currentTimeMillis()
+                )
+                chatRepository.saveMessage(errorMsg)
+                
                 _uiState.update { 
                     it.copy(
-                        isLoadingTranscription = false,
-                        error = "Error processing audio: ${e.message}"
+                        sending = false,
+                        recordedAudioFile = null,
+                        error = "Audio processing failed: ${e.message}"
                     ) 
                 }
             }
         }
     }
     
+    /**
+     * 获取音频文件时长（秒）
+     */
+    private fun getAudioDuration(file: java.io.File): Int {
+        return try {
+            val mediaPlayer = android.media.MediaPlayer()
+            mediaPlayer.setDataSource(file.absolutePath)
+            mediaPlayer.prepare()
+            val durationMs = mediaPlayer.duration
+            mediaPlayer.release()
+            (durationMs / 1000) // 转换为秒
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get audio duration", e)
+            0
+        }
+    }
+    
+    /**
+     * 播放音频消息
+     */
+    fun playAudioMessage(messageId: String, downloadUrl: String) {
+        viewModelScope.launch {
+            try {
+                Log.d(TAG, "Playing audio message: $messageId")
+                Log.d(TAG, "Download URL: $downloadUrl")
+                
+                if (downloadUrl.isBlank()) {
+                    Log.e(TAG, "Download URL is empty")
+                    _uiState.update { 
+                        it.copy(error = "Audio URL is missing") 
+                    }
+                    return@launch
+                }
+                
+                // 停止之前的播放
+                if (_uiState.value.playingMessageId != null) {
+                    Log.d(TAG, "Stopping previous playback")
+                    audioPlayer.stop()
+                }
+                
+                _uiState.update { it.copy(playingMessageId = messageId) }
+                audioPlayer.playUrl(downloadUrl)
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to play audio", e)
+                _uiState.update { 
+                    it.copy(
+                        playingMessageId = null,
+                        error = "Failed to play audio: ${e.message}"
+                    ) 
+                }
+            }
+        }
+    }
+    
+    /**
+     * 停止音频播放
+     */
+    fun stopAudioPlayback() {
+        Log.d(TAG, "Stopping audio playback")
+        audioPlayer.stop()
+        _uiState.update { it.copy(playingMessageId = null) }
+    }
+    
     override fun onCleared() {
         super.onCleared()
+        amplitudeJob?.cancel()
         audioRecorderManager.destroy()
+        audioRecorder.destroy()
+        audioPlayer.destroy()
     }
 }

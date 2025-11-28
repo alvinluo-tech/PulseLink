@@ -144,7 +144,7 @@ fun VoiceAssistantScreen(
                 onMicPressed = {
                     Log.d("VoiceDebug", "Mic pressed! hasPermission=$hasAudioPermission")
                     if (hasAudioPermission) {
-                        Log.d("VoiceDebug", "Starting voice recognition...")
+                        Log.d("VoiceDebug", "Starting audio recording...")
                         viewModel.onMicPressed()
                     } else {
                         Log.d("VoiceDebug", "Requesting permission...")
@@ -155,14 +155,15 @@ fun VoiceAssistantScreen(
                 onMicReleased = {
                     Log.d("VoiceDebug", "Mic released!")
                     if (hasAudioPermission) {
-                        Log.d("VoiceDebug", "Stopping voice recognition...")
+                        Log.d("VoiceDebug", "Stopping audio recording...")
                         viewModel.onMicReleased()
                     }
                 },
                 onNavigateHome = onNavigateHome,
                 onNavigateProfile = onNavigateProfile,
                 sending = uiState.sending,
-                isRecording = uiState.listening
+                isRecording = uiState.isRecording,
+                uiState = uiState
             )
         }
     ) { paddingValues ->
@@ -180,14 +181,28 @@ fun VoiceAssistantScreen(
             ChatList(
                 messages = uiState.messages,
                 isAiThinking = uiState.sending,
-                userAvatarEmoji = uiState.userAvatarEmoji
+                userAvatarEmoji = uiState.userAvatarEmoji,
+                playingMessageId = uiState.playingMessageId,
+                onPlayAudio = { messageId, downloadUrl ->
+                    if (messageId.isBlank()) {
+                        viewModel.stopAudioPlayback()
+                    } else {
+                        viewModel.playAudioMessage(messageId, downloadUrl)
+                    }
+                }
             )
         }
     }
 }
 
 @Composable
-private fun ChatList(messages: List<ChatMessage>, isAiThinking: Boolean = false, userAvatarEmoji: String = "🧓") {
+private fun ChatList(
+    messages: List<ChatMessage>, 
+    isAiThinking: Boolean = false, 
+    userAvatarEmoji: String = "🧓",
+    playingMessageId: String? = null,
+    onPlayAudio: (String, String) -> Unit
+) {
     val listState = rememberLazyListState()
     
     // Auto-scroll to bottom when new messages arrive or AI starts thinking
@@ -206,7 +221,12 @@ private fun ChatList(messages: List<ChatMessage>, isAiThinking: Boolean = false,
         contentPadding = PaddingValues(bottom = 160.dp),
     ) {
         items(messages, key = { it.id }) { msg ->
-            ChatMessageItem(message = msg, userAvatarEmoji = userAvatarEmoji)
+            ChatMessageItem(
+                message = msg, 
+                userAvatarEmoji = userAvatarEmoji,
+                playingMessageId = playingMessageId,
+                onPlayAudio = onPlayAudio
+            )
         }
         
         // AI thinking indicator
@@ -219,7 +239,12 @@ private fun ChatList(messages: List<ChatMessage>, isAiThinking: Boolean = false,
 }
 
 @Composable
-private fun ChatMessageItem(message: ChatMessage, userAvatarEmoji: String = "🧓") {
+private fun ChatMessageItem(
+    message: ChatMessage, 
+    userAvatarEmoji: String = "🧓",
+    playingMessageId: String? = null,
+    onPlayAudio: (String, String) -> Unit = { _, _ -> }
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -245,20 +270,45 @@ private fun ChatMessageItem(message: ChatMessage, userAvatarEmoji: String = "�
             Spacer(modifier = Modifier.width(8.dp))
         }
         
-        // Message bubble
-        Surface(
-            color = if (message.fromAssistant) Color.White else Color(0xFFE3F2FD),
-            shape = RoundedCornerShape(16.dp),
-            tonalElevation = 2.dp,
-            shadowElevation = 2.dp,
-            modifier = Modifier.widthIn(max = 280.dp)
-        ) {
-            Text(
-                text = message.text,
-                fontSize = 18.sp,
-                color = Color(0xFF0F172A),
-                modifier = Modifier.padding(12.dp)
-            )
+        // 根据消息类型显示不同内容
+        when (message.type) {
+            com.alvin.pulselink.domain.model.MessageType.TEXT -> {
+                // 文本消息气泡
+                Surface(
+                    color = if (message.fromAssistant) Color.White else Color(0xFFE3F2FD),
+                    shape = RoundedCornerShape(16.dp),
+                    tonalElevation = 2.dp,
+                    shadowElevation = 2.dp,
+                    modifier = Modifier.widthIn(max = 280.dp)
+                ) {
+                    Text(
+                        text = message.text,
+                        fontSize = 18.sp,
+                        color = Color(0xFF0F172A),
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+            com.alvin.pulselink.domain.model.MessageType.AUDIO -> {
+                // 音频消息卡片
+                com.alvin.pulselink.presentation.senior.voice.components.AudioMessageCard(
+                    duration = message.duration,
+                    isPlaying = playingMessageId == message.id,
+                    isFromAssistant = message.fromAssistant,
+                    onPlayClick = {
+                        android.util.Log.d("VoiceAssistantScreen", "Audio card clicked - ID: ${message.id}, URL: ${message.audioDownloadUrl}")
+                        if (playingMessageId == message.id) {
+                            // 如果正在播放，则停止
+                            android.util.Log.d("VoiceAssistantScreen", "Stopping playback")
+                            onPlayAudio("", "")
+                        } else {
+                            // 否则开始播放
+                            android.util.Log.d("VoiceAssistantScreen", "Starting playback")
+                            onPlayAudio(message.id, message.audioDownloadUrl ?: "")
+                        }
+                    }
+                )
+            }
         }
         
         if (!message.fromAssistant) {
@@ -385,7 +435,8 @@ private fun BottomBar(
     onNavigateHome: () -> Unit,
     onNavigateProfile: () -> Unit,
     sending: Boolean,
-    isRecording: Boolean
+    isRecording: Boolean,
+    uiState: AssistantUiState
 ) {
     Column(
         modifier = Modifier
@@ -499,18 +550,7 @@ private fun BottomBar(
             }
         }
 
-        // Hint text
-        Text(
-            text = "Long press mic button below to speak",
-            color = Color(0xFF6B7280),
-            fontSize = 14.sp,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp, bottom = 8.dp),
-            textAlign = TextAlign.Center
-        )
-
-        // Bottom navigation with voice input enabled
+        // Bottom navigation - 启用语音输入功能
         SeniorBottomNavigationBar(
             selectedItem = 1,
             onItemSelected = { index ->
@@ -520,8 +560,9 @@ private fun BottomBar(
                     2 -> onNavigateProfile()
                 }
             },
-            enableVoiceInput = true,
+            enableVoiceInput = true, // 启用导航栏麦克风
             isRecording = isRecording,
+            recordingAmplitude = uiState.recordingAmplitude, // 传递振幅数据
             onMicPressed = onMicPressed,
             onMicReleased = onMicReleased
         )

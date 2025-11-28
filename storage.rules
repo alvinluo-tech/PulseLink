@@ -1,0 +1,39 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules for PulseLink
+// ⚠️ TEMPORARY: Relaxed rules for development/testing
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function: check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Voice messages path: voice_messages/{userId}/{fileName}
+    match /voice_messages/{userId}/{allPaths=**} {
+      // ⚠️ TEMPORARY: Allow all authenticated users (for testing)
+      allow read, write: if isAuthenticated();
+    }
+    
+    // Legacy path support (if you used chat_audio before)
+    match /chat_audio/{userId}/{fileName} {
+      allow create: if isAuthenticated() 
+                    && isOwner(userId)
+                    && isValidAudioFile();
+      
+      allow read: if isAuthenticated() 
+                  && isOwner(userId);
+      
+      allow delete: if isAuthenticated() 
+                    && isOwner(userId);
+      
+      allow update: if false;
+    }
+    
+    // Default: deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

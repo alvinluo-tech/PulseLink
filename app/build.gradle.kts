@@ -99,6 +99,7 @@ dependencies {
     implementation("com.google.firebase:firebase-auth")       // 身份验证
     implementation("com.google.firebase:firebase-firestore")  // 数据库
     implementation("com.google.firebase:firebase-functions")  // 云函数
+    implementation("com.google.firebase:firebase-storage")    // 云存储
     implementation("com.google.firebase:firebase-messaging")  // 推送
 
     testImplementation(libs.junit)

@@ -12,6 +12,9 @@ const googleApiKey = defineSecret("GOOGLE_API_KEY");
 // 导出音频转录函数
 export { transcribeAudio } from "./transcribe";
 
+// 导出语音消息自动处理函数
+export { onNewChatMessage } from "./chatWithAudio";
+
 // 语音转文字 Cloud Function
 export const voiceToText = onCall(
     {

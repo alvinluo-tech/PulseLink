@@ -36,6 +36,7 @@ fun SeniorBottomNavigationBar(
     onItemSelected: (Int) -> Unit,
     enableVoiceInput: Boolean = false,
     isRecording: Boolean = false,
+    recordingAmplitude: Float = 0f, // 新增：振幅参数 (0f-1f)
     onMicPressed: () -> Unit = {},
     onMicReleased: () -> Unit = {}
 ) {
@@ -71,21 +72,42 @@ fun SeniorBottomNavigationBar(
                 .offset(y = (-20).dp),
             contentAlignment = Alignment.TopCenter
         ) {
-            // Scale animation: 1.0 -> 1.15 when recording
-            val scale by animateFloatAsState(
-                targetValue = if (isRecording) 1.15f else 1.0f,
+            // 波纹动画层 - 根据音量振幅变化
+            if (isRecording) {
+                val rippleScale by animateFloatAsState(
+                    targetValue = 1.0f + (recordingAmplitude * 0.5f), // 0.5倍振幅变化
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    ),
+                    label = "rippleScale"
+                )
+                
+                // 外层波纹
+                Surface(
+                    modifier = Modifier
+                        .size(120.dp)
+                        .scale(rippleScale),
+                    shape = CircleShape,
+                    color = Color(0xFF448AFF).copy(alpha = 0.2f)
+                ) {}
+            }
+            
+            // 按钮本身的缩放动画
+            val buttonScale by animateFloatAsState(
+                targetValue = if (isRecording) 1.0f + (recordingAmplitude * 0.15f) else 1.0f,
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioMediumBouncy,
                     stiffness = Spring.StiffnessLow
                 ),
-                label = "micScale"
+                label = "buttonScale"
             )
             
             // Custom FAB with full gesture control
             Surface(
                 modifier = Modifier
                     .size(72.dp)
-                    .scale(scale)
+                    .scale(buttonScale)
                     .shadow(
                         elevation = 6.dp,
                         shape = CircleShape
@@ -107,7 +129,7 @@ fun SeniorBottomNavigationBar(
                         )
                     },
                 shape = CircleShape,
-                color = if (isRecording) Color(0xFF1976D2) else Color(0xFF448AFF)
+                color = if (isRecording) Color(0xFFFF5252) else Color(0xFF448AFF)
             ) {
                 Box(
                     modifier = Modifier.size(72.dp),
